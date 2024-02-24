@@ -44,7 +44,7 @@ find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 %files
 %{_libdir}/libfused.a
 %{_includedir}/fused/
-%exclude %{_libdir}/pkgconfig
+%{_libdir}/pkgconfig
 
 %changelog
 * Mon Feb 12 2024 Jeff Olivier <jeffolivier@google.com> - 1.0.0-1.0
