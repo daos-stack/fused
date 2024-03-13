@@ -30,7 +30,7 @@ Provides a static user space library and headers for DAOS specific FUSE filesyst
 
 %prep
 %autosetup
-find . -type f -name "*" -exec sed -i 's/fused/fused/g' {} ';'
+find . -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
 
 %build
 %meson -Ddisable-mtab=True -Dutils=False --default-library static
