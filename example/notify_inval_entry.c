@@ -69,7 +69,7 @@
  *
  * ## Compilation ##
  *
- *     gcc -Wall notify_inval_entry.c `pkg-config fused --cflags --libs` -o notify_inval_entry
+ *     gcc -Wall notify_inval_entry.c `pkg-config fuse3 --cflags --libs` -o notify_inval_entry
  *
  * ## Source code ##
  * \include notify_inval_entry.c
