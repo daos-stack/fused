@@ -16,7 +16,10 @@ override_dh_auto_clean:
 	dh_auto_clean
 
 override_dh_auto_configure:
-	find . -type f -name "*" -exec sed -i 's/fused/fused/g' {} ';'
+	find lib -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
+	find include -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
+	sed -i 's/fuse3/fused/g' meson.build
+	sed -i 's/fuse3/fused/g' meson_options.txt
 	dh_auto_configure -- -Ddisable-mtab=True -Dutils=False --default-library static \
 		--libdir=/usr/lib/${DEB_BUILD_MULTIARCH} --prefix=/usr
 
