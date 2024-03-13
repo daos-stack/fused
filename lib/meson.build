@@ -46,9 +46,9 @@ pkg = import('pkgconfig')
 pkg.generate(libraries: [ libfuse, '-lpthread' ],
              libraries_private: '-ldl',
              version: meson.project_version(),
-             name: 'fused',
+             name: 'fuse3',
              description: 'Filesystem in Userspace',
-             subdirs: 'fused')
+             subdirs: 'fuse3')
 
 libfuse_dep = declare_dependency(include_directories: include_dirs,
                                  link_with: libfuse, dependencies: deps)

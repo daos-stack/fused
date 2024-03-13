@@ -200,7 +200,7 @@ static void sfs_init(void *userdata, fuse_conn_info *conn) {
     fuse_set_feature_flag(conn, FUSE_CAP_FLOCK_LOCKS);
 
     if (fs.nosplice) {
-        // FUSE_CAP_SPLICE_READ is enabled in libfused by default,
+        // FUSE_CAP_SPLICE_READ is enabled in libfuse3 by default,
         // see do_init() in in fuse_lowlevel.c
         // Just unset both, in case FUSE_CAP_SPLICE_WRITE would also get enabled
         // by default.

@@ -28,7 +28,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall passthrough_ll.c `pkg-config fused --cflags --libs` -o passthrough_ll
+ *     gcc -Wall passthrough_ll.c `pkg-config fuse3 --cflags --libs` -o passthrough_ll
  *
  * ## Source code ##
  * \include passthrough_ll.c

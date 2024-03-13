@@ -15,7 +15,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall null.c `pkg-config fused --cflags --libs` -o null
+ *     gcc -Wall null.c `pkg-config fuse3 --cflags --libs` -o null
  *
  * ## Source code ##
  * \include passthrough_fh.c

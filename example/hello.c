@@ -12,7 +12,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall hello.c `pkg-config fused --cflags --libs` -o hello
+ *     gcc -Wall hello.c `pkg-config fuse3 --cflags --libs` -o hello
  *
  * ## Source code ##
  * \include hello.c
