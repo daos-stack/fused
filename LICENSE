@@ -4,6 +4,8 @@ General Public License, version 2.1 ("LGPL"):
 - All files in the include/ directory.
 - All files in the lib/ directory.
 - meson.build
+- fused.spec
+- All files in the debian/ directory
 
 The full terms of the LGPL can be found in the LGPL2.txt file.
 
