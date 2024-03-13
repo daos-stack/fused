@@ -278,7 +278,7 @@ libfuse 3.3.0 (2018-11-06)
   special format `/dev/fd/%u`. This allows mounting to be handled by the parent
   so the FUSE filesystem process can run fully unprivileged.
 
-* Add a `drop_privileges` option to mount.fuse3 which causes it to open
+* Add a `drop_privileges` option to mount.fused which causes it to open
   `/dev/fuse` and mount the file system itself, then run the FUSE file
   filesystem fully unprivileged and unable to re-acquire privilege via setuid,
   fscaps, etc.
@@ -463,10 +463,10 @@ libfuse 3.0.0 (2016-12-08)
   libfuse 3. The format/content is guaranteed to remain backwards
   compatible with libfuse 2.
 
-  We recommend to ship libfuse2 and libfuse3 in three separate
+  We recommend to ship libfuse2 and libfused in three separate
   packages: a libfuse-common package that contains files shared by
-  libfuse 2+3 (taken from the libfuse3 tarball), and libfuse2 and
-  libfuse3 packages that contain the shared library and helper
+  libfuse 2+3 (taken from the libfused tarball), and libfuse2 and
+  libfused packages that contain the shared library and helper
   programs for the respective version.
 
 * Fixed test errors when running tests as root.
@@ -500,7 +500,7 @@ libfuse 3.0.0 (2016-12-08)
   race conditions.
 
 * The fusermount and mount.fuse binaries have been renamed to
-  fusermount3 and mount.fuse3 to allow co-installation of libfuse 2.x
+  fusermount3 and mount.fused to allow co-installation of libfuse 2.x
   and 3.x
 
 * Added a `max_read` field to `struct fuse_conn_info`. For the time

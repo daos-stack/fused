@@ -30,7 +30,7 @@ Provides a static user space library and headers for DAOS specific FUSE filesyst
 
 %prep
 %autosetup
-find . -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
+find . -type f -name "*" -exec sed -i 's/fused/fused/g' {} ';'
 
 %build
 %meson -Ddisable-mtab=True -Dutils=False --default-library static
@@ -48,4 +48,4 @@ find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 
 %changelog
 * Mon Feb 12 2024 Jeff Olivier <jeffolivier@google.com> - 1.0.0-1.0
-- Initial packaging for fused, a DAOS file system adaptation of libfuse3
+- Initial packaging for fused, a DAOS file system adaptation of libfused

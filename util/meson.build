@@ -6,7 +6,7 @@ executable('fusermount3', ['fusermount.c', '../lib/mount_util.c', '../lib/util.c
            install_dir: get_option('bindir'),
            c_args: '-DFUSE_CONF="@0@"'.format(fuseconf_path))
 
-executable('mount.fuse3', ['mount.fuse.c'],
+executable('mount.fused', ['mount.fuse.c'],
            include_directories: include_dirs,
            link_with: [ libfuse ],
            install: true,
