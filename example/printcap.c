@@ -13,7 +13,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall printcap.c `pkg-config fuse3 --cflags --libs` -o printcap
+ *     gcc -Wall printcap.c `pkg-config fused --cflags --libs` -o printcap
  *
  * ## Source code ##
  * \include printcap.c

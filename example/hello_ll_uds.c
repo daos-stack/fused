@@ -14,7 +14,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall hello_ll_uds.c `pkg-config fuse3 --cflags --libs` -o hello_ll_uds
+ *     gcc -Wall hello_ll_uds.c `pkg-config fused --cflags --libs` -o hello_ll_uds
  *
  * ## Source code ##
  * \include hello_ll.c
