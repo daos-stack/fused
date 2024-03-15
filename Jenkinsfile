@@ -40,5 +40,5 @@
 // I.e. for testing library changes
 //@Library(value="pipeline-lib@your_branch") _
 packageBuildingPipelineDAOSTest(['make_args': '-f Makefile-rpm.mk',
-                                 distros: ['el8', 'el9', 'leap15', 'ubuntu20.04'],
+                                 'distros': ['el8', 'el9', 'leap15', 'ubuntu20.04'],
 				 'test-tag': 'daosio'])
