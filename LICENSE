@@ -6,6 +6,8 @@ General Public License, version 2.1 ("LGPL"):
 - meson.build
 - fused.spec
 - All files in the debian/ directory
+- Jenkinsfile
+- Makefile-rpm.mk
 
 The full terms of the LGPL can be found in the LGPL2.txt file.
 
