@@ -39,4 +39,6 @@
 // To use a test branch (i.e. PR) until it lands to master
 // I.e. for testing library changes
 //@Library(value="pipeline-lib@your_branch") _
-packageBuildingPipelineDAOSTest(['distros': ['centos7', 'el8', 'el9', 'leap15', 'ubuntu20.04'], 'test-tag': 'daosio'])
+packageBuildingPipelineDAOSTest(['make_args': '-f Makefile-rpm.mk',
+                                 distros: ['el8', 'el9', 'leap15', 'ubuntu20.04'],
+				 'test-tag': 'daosio'])
