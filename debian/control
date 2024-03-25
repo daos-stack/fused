@@ -15,7 +15,7 @@ Vcs-Browser: https://github.com/daos-stack/fused.git
 Vcs-Git: https://github.com/daos-stack/fused.git
 
 Package: fused
-Section: libdevel
+Section: net
 Architecture: linux-any kfreebsd-any
 Depends:
  ${misc:Depends},
@@ -27,3 +27,17 @@ Description: Filesystem in Userspace (development) (3.x version)
  implementations.
  .
  This package contains the development files.
+
+
+Package: libfused-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Description: Development binaries and headers for DAOS FUSE library
+
+
+Package: libfused
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Description: Runtime binaries for DAOS FUSE library
