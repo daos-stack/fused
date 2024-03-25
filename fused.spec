@@ -17,14 +17,23 @@ BuildRequires:	meson, ninja-build, systemd-udev
 This package builds on FUSE but implements a completely custom file
 system intended for use with the DAOS file system.
 
-%package fused-devel
-Summary:	DAOS File System in Userspace based on (FUSE) v3 libraries
+%package libfused
+Summary:	DAOS File System in Userspace based on (FUSE) v3 libraries and headers
 Group:		System Environment/Libraries
 License:	LGPLv2+
 Conflicts:	filesystem < 3
 
-%description fused-devel
-Provides a static user space library and headers for DAOS specific FUSE filesystem
+%description libfused
+Provides a user space library and headers for DAOS specific FUSE filesystem
+
+%package libfused-devel
+Summary:	DAOS File System in Userspace based on (FUSE) v3 libraries and headers
+Group:		System Environment/Libraries
+License:	LGPLv2+
+Conflicts:	filesystem < 3
+
+%description libfused-devel
+Provides a user space library and headers for DAOS specific FUSE filesystem
 
 %global debug_package %{nil}
 
@@ -33,7 +42,7 @@ Provides a static user space library and headers for DAOS specific FUSE filesyst
 find . -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
 
 %build
-%meson -Ddisable-mtab=True -Dutils=False --default-library static
+%meson -Ddisable-mtab=True -Dutils=False --default-library shared
 %meson_build
 
 %install
@@ -41,8 +50,11 @@ export MESON_INSTALL_DESTDIR_PREFIX=%{buildroot}/usr %meson_install
 find %{buildroot} .
 find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 
-%files
-%{_libdir}/libfused.a
+%files libfused
+%{_libdir}/libfused.so.*
+
+%files libfused-devel
+%{_libdir}/libfused.so
 %{_includedir}/fused/
 %{_libdir}/pkgconfig
 
