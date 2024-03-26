@@ -10,7 +10,7 @@ Source0:       https://github.com/daos-stack/%{name}/archive/refs/tags/v%{versio
 Requires:	which
 Conflicts:	filesystem < 3
 BuildRequires:	libselinux-devel
-BuildRequires:	meson
+BuildRequires:	meson, gcc-c++, gcc
 
 %description
 This package builds on FUSE but implements a completely custom file
