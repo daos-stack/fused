@@ -9,9 +9,7 @@ Source0:       https://github.com/daos-stack/%{name}/archive/refs/tags/v%{versio
 
 Requires:	which
 Conflicts:	filesystem < 3
-BuildRequires:	libselinux-devel
-BuildRequires:	autoconf, automake, libtool, gettext-devel
-BuildRequires:	meson, ninja-build, systemd-udev
+BuildRequires:	meson
 
 %description
 This package builds on FUSE but implements a completely custom file
