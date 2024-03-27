@@ -1,33 +1,14 @@
 Source: fused
-Section: utils
 Priority: optional
-Maintainer: Laszlo Boszormenyi (GCS) <gcs@debian.org>
+Maintainer: daos-stack <daos@daos.groups.io>
 Build-Depends:
  debhelper (>= 11),
  pkg-config,
  meson,
- udev,
- python3,
- python3-pytest,
 Standards-Version: 4.3.0
-Homepage: https:daos.io
+Homepage: https://daos.io
 Vcs-Browser: https://github.com/daos-stack/fused.git
 Vcs-Git: https://github.com/daos-stack/fused.git
-
-Package: fused
-Section: net
-Architecture: linux-any kfreebsd-any
-Depends:
- ${misc:Depends},
- libselinux-dev [linux-any],
-Description: Filesystem in Userspace (development) (3.x version)
- Filesystem in Userspace (FUSE) is a simple interface for userspace programs to
- export a virtual filesystem to the Linux kernel. It also aims to provide a
- secure method for non privileged users to create and mount their own filesystem
- implementations.
- .
- This package contains the development files.
-
 
 Package: libfused-dev
 Section: libdevel
