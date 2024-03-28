@@ -21,6 +21,7 @@ Summary:	DAOS File System in Userspace based on (FUSE) v3 libraries and headers
 Group:		System Environment/Libraries
 License:	LGPLv2+
 Conflicts:	filesystem < 3
+Requires:	%{name}%{?_isa} = %{version}-%{release}
 
 %description devel
 Provides a user space library and headers for DAOS specific FUSE filesystem
