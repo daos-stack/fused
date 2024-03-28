@@ -16,22 +16,13 @@ BuildRequires:	meson, gcc-c++, gcc
 This package builds on FUSE but implements a completely custom file
 system intended for use with the DAOS file system.
 
-%package libfused
+%package devel
 Summary:	DAOS File System in Userspace based on (FUSE) v3 libraries and headers
 Group:		System Environment/Libraries
 License:	LGPLv2+
 Conflicts:	filesystem < 3
 
-%description libfused
-Provides a user space library and headers for DAOS specific FUSE filesystem
-
-%package libfused-devel
-Summary:	DAOS File System in Userspace based on (FUSE) v3 libraries and headers
-Group:		System Environment/Libraries
-License:	LGPLv2+
-Conflicts:	filesystem < 3
-
-%description libfused-devel
+%description devel
 Provides a user space library and headers for DAOS specific FUSE filesystem
 
 %global debug_package %{nil}
@@ -49,10 +40,10 @@ export MESON_INSTALL_DESTDIR_PREFIX=%{buildroot}/usr %meson_install
 find %{buildroot} .
 find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 
-%files libfused
+%files
 %{_libdir}/libfused.so.*
 
-%files libfused-devel
+%files devel
 %{_libdir}/libfused.so
 %{_includedir}/fused/
 %{_libdir}/pkgconfig
