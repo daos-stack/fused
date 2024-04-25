@@ -25,12 +25,6 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-/** Major version of FUSE library interface */
-#define FUSE_MAJOR_VERSION 3
-
-/** Minor version of FUSE library interface */
-#define FUSE_MINOR_VERSION 16
-
 #define FUSE_MAKE_VERSION(maj, min)  ((maj) * 100 + (min))
 #define FUSE_VERSION FUSE_MAKE_VERSION(FUSE_MAJOR_VERSION, FUSE_MINOR_VERSION)
 
@@ -182,6 +176,11 @@ struct fuse_loop_config_v1 {
 
 /**
  * Indicates that the filesystem supports lookups of "." and "..".
+ *
+ * When this flag is set, the filesystem must be prepared to receive requests
+ * for invalid inodes (i.e., for which a FORGET request was received or
+ * which have been used in a previous instance of the filesystem daemon) and
+ * must not reuse node-ids (even when setting generation numbers).
  *
  * This feature is disabled by default.
  */
@@ -368,6 +367,23 @@ struct fuse_loop_config_v1 {
 #define FUSE_CAP_HANDLE_KILLPRIV         (1 << 20)
 
 /**
+ * Indicates that the filesystem is responsible for unsetting
+ * setuid and setgid bit and additionally cap (stored as xattr) when a
+ * file is written, truncated, or its owner is changed.
+ * Upon write/truncate suid/sgid is only killed if caller
+ * does not have CAP_FSETID. Additionally upon
+ * write/truncate sgid is killed only if file has group
+ * execute permission. (Same as Linux VFS behavior).
+ * KILLPRIV_V2 requires handling of
+ *   - FUSE_OPEN_KILL_SUIDGID (set in struct fuse_create_in::open_flags)
+ *   - FATTR_KILL_SUIDGID (set in struct fuse_setattr_in::valid)
+ *   - FUSE_WRITE_KILL_SUIDGID (set in struct fuse_write_in::write_flags)
+ *
+ * This feature is disabled by default.
+ */
+#define FUSE_CAP_HANDLE_KILLPRIV_V2         (1 << 21)
+
+/**
  * Indicates that the kernel supports caching symlinks in its page cache.
  *
  * When this feature is enabled, symlink targets are saved in the page cache.
@@ -445,7 +461,7 @@ struct fuse_loop_config_v1 {
  * ensure coherency between mount points (or network clients) and with kernel page
  * cache as enforced by mmap that cannot be guaranteed anymore.
  */
-#define FUSE_CAP_DIRECT_IO_ALLOW_MMAP  (1 << 27)
+#define FUSE_CAP_DIRECT_IO_ALLOW_MMAP  (1 << 28)
 
 /**
  * Ioctl flags
