@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sys/file.h>
+#include <sys/ioctl.h>
 
 #ifndef F_LINUX_SPECIFIC_BASE
 #define F_LINUX_SPECIFIC_BASE       1024
@@ -133,14 +134,20 @@ void fuse_free_req(fuse_req_t req)
 	int ctr;
 	struct fuse_session *se = req->se;
 
-	pthread_mutex_lock(&se->lock);
-	req->u.ni.func = NULL;
-	req->u.ni.data = NULL;
-	list_del_req(req);
-	ctr = --req->ctr;
-	fuse_chan_put(req->ch);
-	req->ch = NULL;
-	pthread_mutex_unlock(&se->lock);
+	if (se->conn.no_interrupt) {
+		ctr = --req->ref_cnt;
+		fuse_chan_put(req->ch);
+		req->ch = NULL;
+	} else {
+		pthread_mutex_lock(&se->lock);
+		req->u.ni.func = NULL;
+		req->u.ni.data = NULL;
+		list_del_req(req);
+		ctr = --req->ref_cnt;
+		fuse_chan_put(req->ch);
+		req->ch = NULL;
+		pthread_mutex_unlock(&se->lock);
+	}
 	if (!ctr)
 		destroy_req(req);
 }
@@ -154,7 +161,7 @@ static struct fuse_req *fuse_ll_alloc_req(struct fuse_session *se)
 		fuse_log(FUSE_LOG_ERR, "fuse: failed to allocate request\n");
 	} else {
 		req->se = se;
-		req->ctr = 1;
+		req->ref_cnt = 1;
 		list_init_req(req);
 		pthread_mutex_init(&req->lock, NULL);
 	}
@@ -400,6 +407,10 @@ static void fill_open(struct fuse_open_out *arg,
 		      const struct fuse_file_info *f)
 {
 	arg->fh = f->fh;
+	if (f->backing_id > 0) {
+		arg->backing_id = f->backing_id;
+		arg->open_flags |= FOPEN_PASSTHROUGH;
+	}
 	if (f->direct_io)
 		arg->open_flags |= FOPEN_DIRECT_IO;
 	if (f->keep_cache)
@@ -464,6 +475,31 @@ int fuse_reply_attr(fuse_req_t req, const struct stat *attr,
 int fuse_reply_readlink(fuse_req_t req, const char *linkname)
 {
 	return send_reply_ok(req, linkname, strlen(linkname));
+}
+
+int fuse_passthrough_open(fuse_req_t req, int fd)
+{
+	struct fuse_backing_map map = { .fd = fd };
+	int ret;
+
+	ret = ioctl(req->se->fd, FUSE_DEV_IOC_BACKING_OPEN, &map);
+	if (ret <= 0) {
+		fuse_log(FUSE_LOG_ERR, "fuse: passthrough_open: %s\n", strerror(errno));
+		return 0;
+	}
+
+	return ret;
+}
+
+int fuse_passthrough_close(fuse_req_t req, int backing_id)
+{
+	int ret;
+
+	ret = ioctl(req->se->fd, FUSE_DEV_IOC_BACKING_CLOSE, &backing_id);
+	if (ret < 0)
+		fuse_log(FUSE_LOG_ERR, "fuse: passthrough_close: %s\n", strerror(errno));
+
+	return ret;
 }
 
 int fuse_reply_open(fuse_req_t req, const struct fuse_file_info *f)
@@ -1351,6 +1387,8 @@ static void do_open(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 
 	if (req->se->op.open)
 		req->se->op.open(req, nodeid, &fi);
+	else if (req->se->conn.want & FUSE_CAP_NO_OPEN_SUPPORT)
+		fuse_reply_err(req, ENOSYS);
 	else
 		fuse_reply_open(req, &fi);
 }
@@ -1507,6 +1545,8 @@ static void do_opendir(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 
 	if (req->se->op.opendir)
 		req->se->op.opendir(req, nodeid, &fi);
+	else if (req->se->conn.want & FUSE_CAP_NO_OPENDIR_SUPPORT)
+		fuse_reply_err(req, ENOSYS);
 	else
 		fuse_reply_open(req, &fi);
 }
@@ -1723,7 +1763,7 @@ static int find_interrupted(struct fuse_session *se, struct fuse_req *req)
 			fuse_interrupt_func_t func;
 			void *data;
 
-			curr->ctr++;
+			curr->ref_cnt++;
 			pthread_mutex_unlock(&se->lock);
 
 			/* Ugh, ugly locking */
@@ -1738,8 +1778,8 @@ static int find_interrupted(struct fuse_session *se, struct fuse_req *req)
 			pthread_mutex_unlock(&curr->lock);
 
 			pthread_mutex_lock(&se->lock);
-			curr->ctr--;
-			if (!curr->ctr) {
+			curr->ref_cnt--;
+			if (!curr->ref_cnt) {
 				destroy_req(curr);
 			}
 
@@ -2023,6 +2063,8 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 			se->conn.capable |= FUSE_CAP_DIRECT_IO_ALLOW_MMAP;
 		if (arg->minor >= 38 || (inargflags & FUSE_HAS_EXPIRE_ONLY))
 			se->conn.capable |= FUSE_CAP_EXPIRE_ONLY;
+		if (inargflags & FUSE_PASSTHROUGH)
+			se->conn.capable |= FUSE_CAP_PASSTHROUGH;
 	} else {
 		se->conn.max_readahead = 0;
 	}
@@ -2071,7 +2113,7 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 	 */
 
 	se->conn.time_gran = 1;
-	
+
 	if (bufsize < FUSE_MIN_READ_BUFFER) {
 		fuse_log(FUSE_LOG_ERR, "fuse: warning: buffer size too small: %zu\n",
 			bufsize);
@@ -2157,6 +2199,14 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		outargflags |= FUSE_SETXATTR_EXT;
 	if (se->conn.want & FUSE_CAP_DIRECT_IO_ALLOW_MMAP)
 		outargflags |= FUSE_DIRECT_IO_ALLOW_MMAP;
+	if (se->conn.want & FUSE_CAP_PASSTHROUGH) {
+		outargflags |= FUSE_PASSTHROUGH;
+		/*
+		 * outarg.max_stack_depth includes the fuse stack layer,
+		 * so it is one more than max_backing_stack_depth.
+		 */
+		outarg.max_stack_depth = se->conn.max_backing_stack_depth + 1;
+	}
 
 	if (inargflags & FUSE_INIT_EXT) {
 		outargflags |= FUSE_INIT_EXT;
@@ -2195,6 +2245,9 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 			outarg.congestion_threshold);
 		fuse_log(FUSE_LOG_DEBUG, "   time_gran=%u\n",
 			outarg.time_gran);
+		if (se->conn.want & FUSE_CAP_PASSTHROUGH)
+			fuse_log(FUSE_LOG_DEBUG, "   max_stack_depth=%u\n",
+				outarg.max_stack_depth);
 	}
 	if (arg->minor < 5)
 		outargsize = FUSE_COMPAT_INIT_OUT_SIZE;
@@ -2308,7 +2361,7 @@ int fuse_lowlevel_notify_inval_inode(struct fuse_session *se, fuse_ino_t ino,
 
 	if (se->conn.proto_minor < 12)
 		return -ENOSYS;
-	
+
 	outarg.ino = ino;
 	outarg.off = off;
 	outarg.len = len;
@@ -2321,13 +2374,13 @@ int fuse_lowlevel_notify_inval_inode(struct fuse_session *se, fuse_ino_t ino,
 
 /**
  * Notify parent attributes and the dentry matching parent/name
- * 
+ *
  * Underlying base function for fuse_lowlevel_notify_inval_entry() and
  * fuse_lowlevel_notify_expire_entry().
- * 
+ *
  * @warning
  * Only checks if fuse_lowlevel_notify_inval_entry() is supported by
- * the kernel. All other flags will fall back to 
+ * the kernel. All other flags will fall back to
  * fuse_lowlevel_notify_inval_entry() if not supported!
  * DO THE PROPER CHECKS IN THE DERIVED FUNCTION!
  *
@@ -2739,7 +2792,13 @@ void fuse_session_process_buf_int(struct fuse_session *se,
 	err = ENOSYS;
 	if (in->opcode >= FUSE_MAXOP || !fuse_ll_ops[in->opcode].func)
 		goto reply_err;
-	if (in->opcode != FUSE_INTERRUPT) {
+	/* Do not process interrupt request */
+	if (se->conn.no_interrupt && in->opcode == FUSE_INTERRUPT) {
+		if (se->debug)
+			fuse_log(FUSE_LOG_DEBUG, "FUSE_INTERRUPT: reply to kernel to disable interrupt\n");
+		goto reply_err;
+	}
+	if (!se->conn.no_interrupt && in->opcode != FUSE_INTERRUPT) {
 		struct fuse_req *intr;
 		pthread_mutex_lock(&se->lock);
 		intr = check_interrupt(se, req);
@@ -3020,9 +3079,12 @@ restart:
 	return res;
 }
 
-struct fuse_session *fuse_session_new(struct fuse_args *args,
-				      const struct fuse_lowlevel_ops *op,
-				      size_t op_size, void *userdata)
+FUSE_SYMVER("_fuse_session_new_317", "_fuse_session_new@@FUSE_3.17")
+struct fuse_session *_fuse_session_new_317(struct fuse_args *args,
+					  const struct fuse_lowlevel_ops *op,
+					  size_t op_size,
+					  struct libfuse_version *version,
+					  void *userdata)
 {
 	int err;
 	struct fuse_session *se;
@@ -3101,6 +3163,14 @@ struct fuse_session *fuse_session_new(struct fuse_args *args,
 	se->userdata = userdata;
 
 	se->mo = mo;
+
+	/* Fuse server application should pass the version it was compiled
+	 * against and pass it. If a libfuse version accidentally introduces an
+	 * ABI incompatibility, it might be possible to 'fix' that at run time,
+	 * by checking the version numbers.
+	 */
+	se->version = *version;
+
 	return se;
 
 out5:
@@ -3116,9 +3186,31 @@ out1:
 	return NULL;
 }
 
-int fuse_session_custom_io(struct fuse_session *se, const struct fuse_custom_io *io,
-			   int fd)
+struct fuse_session *fuse_session_new_30(struct fuse_args *args,
+					  const struct fuse_lowlevel_ops *op,
+					  size_t op_size,
+					  void *userdata);
+FUSE_SYMVER("fuse_session_new_30", "fuse_session_new@FUSE_3.0")
+struct fuse_session *fuse_session_new_30(struct fuse_args *args,
+					  const struct fuse_lowlevel_ops *op,
+					  size_t op_size,
+					  void *userdata)
 {
+	/* unknown version */
+	struct libfuse_version version = { 0 };
+
+	return _fuse_session_new_317(args, op, op_size, &version, userdata);
+}
+
+FUSE_SYMVER("fuse_session_custom_io_317", "fuse_session_custom_io@@FUSE_3.17")
+int fuse_session_custom_io_317(struct fuse_session *se,
+				const struct fuse_custom_io *io, size_t op_size, int fd)
+{
+	if (sizeof(struct fuse_custom_io) < op_size) {
+		fuse_log(FUSE_LOG_ERR, "fuse: warning: library too old, some operations may not work\n");
+		op_size = sizeof(struct fuse_custom_io);
+	}
+
 	if (fd < 0) {
 		fuse_log(FUSE_LOG_ERR, "Invalid file descriptor value %d passed to "
 			"fuse_session_custom_io()\n", fd);
@@ -3138,7 +3230,7 @@ int fuse_session_custom_io(struct fuse_session *se, const struct fuse_custom_io 
 		return -EINVAL;
 	}
 
-	se->io = malloc(sizeof(struct fuse_custom_io));
+	se->io = calloc(1, sizeof(struct fuse_custom_io));
 	if (se->io == NULL) {
 		fuse_log(FUSE_LOG_ERR, "Failed to allocate memory for custom io. "
 			"Error: %s\n", strerror(errno));
@@ -3146,8 +3238,18 @@ int fuse_session_custom_io(struct fuse_session *se, const struct fuse_custom_io 
 	}
 
 	se->fd = fd;
-	*se->io = *io;
+	memcpy(se->io, io, op_size);
 	return 0;
+}
+
+int fuse_session_custom_io_30(struct fuse_session *se,
+			const struct fuse_custom_io *io, int fd);
+FUSE_SYMVER("fuse_session_custom_io_30", "fuse_session_custom_io@FUSE_3.0")
+int fuse_session_custom_io_30(struct fuse_session *se,
+			const struct fuse_custom_io *io, int fd)
+{
+	return fuse_session_custom_io_317(se, io,
+			offsetof(struct fuse_custom_io, clone_fd), fd);
 }
 
 int fuse_session_mount(struct fuse_session *se, const char *mountpoint)
