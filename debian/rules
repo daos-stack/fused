@@ -1,0 +1,33 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+SHELL := sh -e
+
+DEB_BUILD_ARCH ?= $(shell dpkg-architecture -qDEB_BUILD_ARCH)
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+export DEB_BUILD_OPTIONS=nocheck
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+override_dh_auto_clean:
+	dh_auto_clean
+
+override_dh_auto_configure:
+	find lib -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
+	find include -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
+	sed -i 's/fuse3/fused/g' meson.build
+	sed -i 's/fuse3/fused/g' meson_options.txt
+	dh_auto_configure -- -Ddisable-mtab=True -Dutils=False --default-library shared \
+		--libdir=/usr/lib/${DEB_BUILD_MULTIARCH} --prefix=/usr
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+%:
+	dh ${@} --buildsystem=meson
+
+.PHONY: override_dh_auto_clean override_dh_auto_configure \
+	override_dh_missing override_dh_auto_test
