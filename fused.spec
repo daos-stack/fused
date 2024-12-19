@@ -1,11 +1,11 @@
 Name:          fused
-Version:       1.0.0rc1
+Version:       1.0.0
 Release:       1%{?relval}%{?dist}
 Summary:       DAOS File System in Userspace Library
 
 License:       LGPLv2+
 URL:           https://github.com/daos-stack/fused
-Source0:       https://github.com/daos-stack/%{name}/archive/refs/tags/v%{version}.tar.gz
+Source0:       %{name}-%{version}.tar.gz
 
 Requires:	which
 Conflicts:	filesystem < 3
