@@ -28,10 +28,6 @@ Provides a user space library and headers for DAOS specific FUSE filesystem
 
 %global debug_package %{nil}
 
-%prep
-%autosetup
-find . -type f -name "*" -exec sed -i 's/fuse3/fused/g' {} ';'
-
 %build
 %meson -Ddisable-mtab=True -Dutils=False --default-library shared
 %meson_build
