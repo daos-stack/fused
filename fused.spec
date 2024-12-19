@@ -28,6 +28,9 @@ Provides a user space library and headers for DAOS specific FUSE filesystem
 
 %global debug_package %{nil}
 
+%prep
+%autosetup
+
 %build
 %meson -Ddisable-mtab=True -Dutils=False --default-library shared
 %meson_build
