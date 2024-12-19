@@ -16,7 +16,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall ioctl.c `pkg-config fuse3 --cflags --libs` -o ioctl
+ *     gcc -Wall ioctl.c `pkg-config fused --cflags --libs` -o ioctl
  *
  * ## Source code ##
  * \include ioctl.c

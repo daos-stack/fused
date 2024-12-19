@@ -2126,7 +2126,7 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 	/* Default settings for modern filesystems.
 	 *
 	 * Most of these capabilities were disabled by default in
-	 * libfuse2 for backwards compatibility reasons. In libfuse3,
+	 * libfuse2 for backwards compatibility reasons. In libfused,
 	 * we can finally enable them by default (as long as they're
 	 * supported by the kernel).
 	 */

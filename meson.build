@@ -209,7 +209,7 @@ configure_file(output: 'fuse_config.h', configuration : private_cfg)
 # symbol (define) conflicts
 configure_file(output: 'libfuse_config.h',
                configuration : public_cfg,
-               install: true, install_dir: join_paths(get_option('includedir'), 'fuse3'))
+               install: true, install_dir: join_paths(get_option('includedir'), 'fused'))
 
 # '.' will refer to current build directory, which contains config.h
 include_dirs = include_directories('include', 'lib', '.')
