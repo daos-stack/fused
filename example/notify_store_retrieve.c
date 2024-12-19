@@ -51,7 +51,7 @@
  *
  * ## Compilation ##
  *
- *     gcc -Wall notify_store_retrieve.c `pkg-config fuse3 --cflags --libs` -o notify_store_retrieve
+ *     gcc -Wall notify_store_retrieve.c `pkg-config fused --cflags --libs` -o notify_store_retrieve
  *
  * ## Source code ##
  * \include notify_store_retrieve.c

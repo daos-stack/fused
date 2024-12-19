@@ -67,7 +67,7 @@ parse_glibc_trace()
         line=$(echo $line line | sed -e 's/.*://')
 
         # parse lines like
-        # /usr/lib/libfuse3.so.3(+0x1c0ef) [0x7fca6061c0ef]
+        # /usr/lib/libfused.so.1(+0x1c0ef) [0x7fca6061c0ef]
 
         filename=$(echo $line | awk '{print $1}' | sed -e 's/(.*$//')
         if [ -z "${filename}" ]; then
