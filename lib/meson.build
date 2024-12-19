@@ -33,8 +33,8 @@ else
 endif
 
 fusermount_path = join_paths(get_option('prefix'), get_option('bindir'))
-libfuse = library('fuse3', libfuse_sources, version: meson.project_version(),
-                  soversion: '3', include_directories: include_dirs,
+libfuse = library('fused', libfuse_sources, version: meson.project_version(),
+                  soversion: '1', include_directories: include_dirs,
                   dependencies: deps, install: true,
                   link_depends: 'fuse_versionscript',
                   c_args: [ '-DFUSE_USE_VERSION=317',
@@ -46,9 +46,9 @@ pkg = import('pkgconfig')
 pkg.generate(libraries: [ libfuse, '-lpthread' ],
              libraries_private: '-ldl',
              version: meson.project_version(),
-             name: 'fuse3',
+             name: 'fused',
              description: 'Filesystem in Userspace',
-             subdirs: 'fuse3')
+             subdirs: 'fused')
 
 libfuse_dep = declare_dependency(include_directories: include_dirs,
                                  link_with: libfuse, dependencies: deps)

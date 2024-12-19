@@ -17,7 +17,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall passthrough_fh.c `pkg-config fuse3 --cflags --libs` -lulockmgr -o passthrough_fh
+ *     gcc -Wall passthrough_fh.c `pkg-config fused --cflags --libs` -lulockmgr -o passthrough_fh
  *
  * ## Source code ##
  * \include passthrough_fh.c
