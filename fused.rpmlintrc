@@ -1,0 +1,7 @@
+# This line is mandatory to access the configuration functions
+from Config import *
+
+addFilter('fused.x86_64: W: no-documentation')
+addFilter('fused-devel.x86_64: W: no-documentation')
+# https://github.com/rpm-software-management/rpmlint/issues/856
+addFilter('W: incoherent-version-in-changelog')

@@ -7,21 +7,21 @@ License:       LGPLv2+
 URL:           https://github.com/daos-stack/fused
 Source0:       https://github.com/daos-stack/%{name}/releases/download/%{shortcommit0}/%{name}-%{version}.tar.gz
 
-Requires:	which
-Conflicts:	filesystem < 3
-BuildRequires:	libselinux-devel
-BuildRequires:	meson, gcc-c++, gcc
+Requires:      which
+Conflicts:     filesystem < 3
+BuildRequires: libselinux-devel
+BuildRequires: meson, gcc-c++, gcc
 
 %description
 This package builds on FUSE but implements a completely custom file
 system intended for use with the DAOS file system.
 
 %package devel
-Summary:	DAOS File System in Userspace based on (FUSE) v3 libraries and headers
-Group:		System Environment/Libraries
-License:	LGPLv2+
-Conflicts:	filesystem < 3
-Requires:	%{name}%{?_isa} = %{version}-%{release}
+Summary:   DAOS File System in Userspace based on (FUSE) v3 libraries and headers
+Group:     System Environment/Libraries
+License:   LGPLv2+
+Conflicts: filesystem < 3
+Requires:  %{name}%{?_isa} = %{version}-%{release}
 
 %description devel
 Provides a user space library and headers for DAOS specific FUSE filesystem
@@ -43,7 +43,7 @@ find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 %files
 %{_libdir}/libfused.so.*
 
-%files devel
+%files -n devel
 %{_libdir}/libfused.so
 %{_includedir}/fused/
 %{_libdir}/pkgconfig
