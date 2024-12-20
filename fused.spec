@@ -5,7 +5,7 @@ Summary:       DAOS File System in Userspace Library
 
 License:       LGPLv2+
 URL:           https://github.com/daos-stack/fused
-Source0:       %{name}-%{version}.tar.gz
+Source0:       https://github.com/daos-stack/%{name}/releases/download/%{shortcommit0}/%{name}-%{version}.tar.gz
 
 Requires:	which
 Conflicts:	filesystem < 3
