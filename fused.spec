@@ -32,7 +32,7 @@ Provides a user space library and headers for DAOS specific FUSE filesystem
 %autosetup
 
 %build
-%meson -Ddisable-mtab=True -Dutils=False --default-library shared
+%meson --strip -Ddisable-mtab=True -Dutils=False --default-library shared
 %meson_build
 
 %install
