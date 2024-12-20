@@ -40,7 +40,7 @@ export MESON_INSTALL_DESTDIR_PREFIX=%{buildroot}/usr %meson_install
 find %{buildroot} .
 find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 
-%files -n
+%files
 %{_libdir}/libfused.so.*
 
 %files devel
