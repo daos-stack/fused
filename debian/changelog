@@ -1,5 +1,11 @@
-fused (1.0.0-1) unstable; urgency=medium
+fused (1.0.0-2) unstable; urgency=medium
+  [ Jeff Olivier ]
+  * Change to static only
 
+ -- Jeff Olivier <jeffolivier@google.com>  Sat, 11 Jan 2025 08:09:00 +0000
+
+
+fused (1.0.0-1) unstable; urgency=medium
   [ Jeff Olivier ]
   * Initial version
 
