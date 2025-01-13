@@ -16,7 +16,7 @@ BuildRequires: meson, gcc-c++, gcc
 This package builds on FUSE but implements a completely custom file
 system intended for use with the DAOS file system.
 
-%package devel
+%package static
 Summary:   DAOS file system development files
 Group:     System Environment/Libraries
 License:   LGPLv2+
@@ -26,7 +26,7 @@ Requires:  %{name}%{?_isa} = %{version}-%{release}
 
 %global debug_package %{nil}
 
-%description devel
+%description static
 Static library, pkgconfig, and headers for DAOS FUSE library
 
 %prep
@@ -41,12 +41,15 @@ export MESON_INSTALL_DESTDIR_PREFIX=%{buildroot}/usr %meson_install
 find %{buildroot} .
 find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 
-%files devel
+%files static
 %{_libdir}/libfused.a
 %{_includedir}/fused/
 %{_libdir}/pkgconfig
 
 %changelog
+* Sun Jan 12 2025 Jeff Olivier <jeffolivier@google.com> - 1.0.0-2.0
+- Change package name
+
 * Sat Jan 11 2025 Jeff Olivier <jeffolivier@google.com> - 1.0.0-2.0
 - Only build static lib
 
