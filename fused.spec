@@ -1,6 +1,6 @@
 Name:          fused
 Version:       1.0.0
-Release:       2%{?relval}%{?dist}
+Release:       3%{?relval}%{?dist}
 Summary:       DAOS File System in Userspace Library
 
 License:       LGPLv2+
@@ -21,8 +21,6 @@ Summary:   DAOS file system development files
 Group:     System Environment/Libraries
 License:   LGPLv2+
 Conflicts: filesystem < 3
-Requires:  %{name}%{?_isa} = %{version}-%{release}
-
 
 %global debug_package %{nil}
 
@@ -47,6 +45,9 @@ find %{buildroot} -type f -name "*.la" -exec rm -f {} ';'
 %{_libdir}/pkgconfig
 
 %changelog
+* Sun Jan 12 2025 Jeff Olivier <jeffolivier@google.com> - 1.0.0-3.0
+- Remove dependence on fused
+
 * Sat Jan 11 2025 Jeff Olivier <jeffolivier@google.com> - 1.0.0-2.0
 - Only build static lib
 
