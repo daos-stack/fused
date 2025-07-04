@@ -15,6 +15,7 @@ LABEL maintainer="daos@daos.groups.io"
 # Use local repo server if present
 ARG REPO_FILE_URL
 ARG DAOS_LAB_CA_FILE_URL
+ARG REPOSITORY_NAME
 # script to install OS updates basic tools and daos dependencies
 # COPY ./utils/scripts/install-fedora.sh /tmp/install.sh
 # script to setup local repo if available
@@ -41,6 +42,8 @@ RUN if [ $UID != 0 ]; then                   \
         useradd -u $UID -ms /bin/bash $USER; \
         echo "$USER:$PASSWD" | chpasswd;     \
         usermod -a -G mock $USER;            \
+        mkdir -p /var/cache/mock;            \
+        chown $USER:root /var/cache/mock;    \
     fi
 
 ARG CB0

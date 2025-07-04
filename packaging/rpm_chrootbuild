@@ -4,6 +4,8 @@ set -uex
 
 : "${HTTPS_PROXY:=}"
 : "${REPO_FILE_URL:=}"
+: "${ARCH:=$(arch)}"
+: "${REPOSITORY_NAME:=artifactory}"
 
 cp /etc/mock/"$CHROOT_NAME".cfg mock.cfg
 
@@ -12,6 +14,7 @@ cat <<EOF >> mock.cfg
 config_opts['plugin_conf']['ccache_enable'] = True
 config_opts['plugin_conf']['ccache_opts']['dir'] = "%(cache_topdir)s/%(root)s/ccache/"
 EOF
+
 
 # Optionally add a proxy to mock
 if [ -n "$HTTPS_PROXY" ];then
@@ -26,7 +29,7 @@ if [ -n "$REPO_FILE_URL" ]; then
     echo "config_opts['no_proxy'] = '${direct}'" >> mock.cfg
 fi
 
-if [[ $CHROOT_NAME == *epel-8-x86_64 ]]; then
+if [[ $CHROOT_NAME == *"epel-8-${ARCH}" ]]; then
     cat <<EOF >> mock.cfg
 config_opts['module_setup_commands'] = [
   ('enable', 'javapackages-tools:201801'),
@@ -36,7 +39,7 @@ EOF
 fi
 
 # Use dnf on CentOS 7
-if [[ $CHROOT_NAME == *epel-7-x86_64 ]]; then
+if [[ $CHROOT_NAME == *"epel-7-$ARCH" ]]; then
     MOCK_OPTIONS="--dnf --no-bootstrap-chroot${MOCK_OPTIONS:+ }$MOCK_OPTIONS"
 fi
 
@@ -76,7 +79,7 @@ if [ -n "${ARTIFACTORY_URL:-}" ] && "$LOCAL_REPOS"; then
             fi
         fi
         curl -sSf "$REPO_FILE_URL"daos_ci-"${CHROOT_NAME%-*}".repo >> mock.cfg
-        repo_adds+=("--enablerepo *-artifactory")
+        repo_adds+=("--enablerepo *-${REPOSITORY_NAME}")
     fi
 fi
 

@@ -1,14 +1,14 @@
 #!/bin/bash
 set -uex
 
-# This script is used by dockerfiles to optionally use
+# This script is used by Dockerfiles to optionally use
 # a local repository instead of a distro provided repository.
 # It will also optionally allow running a /tmp/install script
 # for custom packages if present.
 
 : "${REPO_FILE_URL:=}"
 : "${HTTPS_PROXY:=}"
-: "${DAOS_LAB_CA_FILE_UR:=}"
+: "${DAOS_LAB_CA_FILE_URL:=}"
 : "${REPOSITORY_NAME:=artifactory}"
 
 disable_repos () {
@@ -29,7 +29,8 @@ install_curl() {
         return
     else
         apt-get update
-        apt-get install curl ca-certificates gpg gpg-agent
+        apt-get install curl ca-certificates gpg gpg-agent \
+                software-properties-common
     fi
 
     if command -v wget; then
@@ -72,10 +73,17 @@ DISTRO_VERSION="${BASE_DISTRO##*:}"
 if [ -n "$REPO_FILE_URL" ]; then
     install_curl
     install_optional_ca
-    curl -k --noproxy '*' -sSf                               \
-         -o "daos_ci-ubuntu${DISTRO_VERSION}-${REPOSITORY_NAME}.list" \
-         "${REPO_FILE_URL}daos_ci-ubuntu${DISTRO_VERSION}-${REPOSITORY_NAME}.list"
-    disable_repos
+    # Ubuntu local repo mirror is not working
+    # curl -k --noproxy '*' -sSf                               \
+    #      -o "daos_ci-ubuntu${DISTRO_VERSION}-${REPOSITORY_NAME}.list" \
+    #      "${REPO_FILE_URL}daos_ci-ubuntu${DISTRO_VERSION}-${REPOSITORY_NAME}.list"
+    # disable_repos
+    # temp hack until we can debug the Ubuntu repos.
+    REPO_BASE="${REPO_FILE_URL%repo-files/}"
+    curl -k --noproxy '*' -sSf \
+            -o "rpmdevtools_8.10-10_amd64.deb" \
+            "${REPO_BASE}daos-stack-deps-ubuntu-${DISTRO_VERSION}-x86_64-stable-local/pool/rpmdevtools_8.10-10_amd64.deb"
+    apt-get install "./rpmdevtools_8.10-10_amd64.deb"
     mkdir -p /usr/local/share/keyrings/
     curl --noproxy '*' -sSf -O "${REPO_FILE_URL}esad_repo.key"
     gpg --no-default-keyring --keyring ./temp-keyring.gpg            \
@@ -86,9 +94,10 @@ fi
 
 apt-get update
 apt-get upgrade
-apt-get install gpg-agent software-properties-common
-add-apt-repository ppa:longsleep/golang-backports
+# add-apt-repository ppa:longsleep/golang-backports
 apt-get update
-chmod +x /tmp/install.sh
-/tmp/install.sh
+if [ -e /tmp/install.sh ]; then
+    chmod +x /tmp/install.sh
+    /tmp/install.sh
+fi
 apt-get clean all
