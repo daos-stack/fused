@@ -44,8 +44,13 @@ if sys.platform == 'linux':
     options.append('clone_fd')
 
 def invoke_directly(mnt_dir, name, options):
-    cmdline = base_cmdline + [ pjoin(basename, 'example', name),
-                               '-f', mnt_dir, '-o', ','.join(options) ]
+    # Handle test/hello specially since it's not in example/
+    if name.startswith('test/'):
+        path = pjoin(basename, name)
+    else:
+        path = pjoin(basename, 'example', name)
+
+    cmdline = base_cmdline + [ path, '-f', mnt_dir, '-o', ','.join(options) ]
     if name == 'hello_ll':
         # supports single-threading only
         cmdline.append('-s')
@@ -88,7 +93,7 @@ def readdir_inode(dir):
 @pytest.mark.parametrize("cmdline_builder", (invoke_directly, invoke_mount_fuse,
                                              invoke_mount_fuse_drop_privileges))
 @pytest.mark.parametrize("options", powerset(options))
-@pytest.mark.parametrize("name", ('hello', 'hello_ll'))
+@pytest.mark.parametrize("name", ('hello', 'hello_ll', 'test/hello'))
 def test_hello(tmpdir, name, options, cmdline_builder, output_checker):
     logger = logging.getLogger(__name__)
     mnt_dir = str(tmpdir)
@@ -284,6 +289,11 @@ def test_ioctl(tmpdir, output_checker):
     progname = pjoin(basename, 'example', 'ioctl')
     if not os.path.exists(progname):
         pytest.skip('%s not built' % os.path.basename(progname))
+
+    # Check if binary is 32-bit
+    file_output = subprocess.check_output(['file', progname]).decode()
+    if 'ELF 32-bit' in file_output and platform.machine() == 'x86_64':
+        pytest.skip('ioctl test not supported for 32-bit binary on 64-bit system')
     
     mnt_dir = str(tmpdir)
     testfile = pjoin(mnt_dir, 'fioc')
@@ -427,6 +437,14 @@ def test_dev_auto_unmount(short_tmpdir, output_checker, intended_user):
 @pytest.mark.skipif(os.getuid() != 0,
                     reason='needs to run as root')
 def test_cuse(output_checker):
+    progname = pjoin(basename, 'example', 'cuse')
+    if not os.path.exists(progname):
+        pytest.skip('%s not built' % os.path.basename(progname))
+
+    # Check if binary is 32-bit
+    file_output = subprocess.check_output(['file', progname]).decode()
+    if 'ELF 32-bit' in file_output and platform.machine() == 'x86_64':
+        pytest.skip('cuse test not supported for 32-bit binary on 64-bit system')
 
     # Valgrind warns about unknown ioctls, that's ok
     output_checker.register_output(r'^==([0-9]+).+unhandled ioctl.+\n'

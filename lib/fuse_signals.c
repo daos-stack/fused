@@ -27,8 +27,10 @@ static int ignore_sigs[] = { SIGPIPE};
 static int fail_sigs[] = { SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGSEGV };
 static struct fuse_session *fuse_instance;
 
+#ifdef HAVE_BACKTRACE
 #define BT_STACK_SZ (1024 * 1024)
 static void *backtrace_buffer[BT_STACK_SZ];
+#endif
 
 static void dump_stack(void)
 {
@@ -150,8 +152,13 @@ int fuse_set_signal_handlers(struct fuse_session *se)
 	if (rc < 0)
 		return rc;
 
-	if (fuse_instance == NULL)
-		fuse_instance = se;
+	/*
+	 * needs to be set independently if already set, as some  applications
+	 * may have multiple sessions and might rely on traditional behavior
+	 * that the last session is used.
+	 */
+	fuse_instance = se;
+
 	return 0;
 }
 
@@ -164,8 +171,8 @@ int fuse_set_fail_signal_handlers(struct fuse_session *se)
 	if (rc < 0)
 		return rc;
 
-	if (fuse_instance == NULL)
-		fuse_instance = se;
+	/* See fuse_set_signal_handlers, why set unconditionally */
+	fuse_instance = se;
 
 	return 0;
 }

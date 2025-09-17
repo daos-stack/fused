@@ -8,6 +8,8 @@
   See the file COPYING.LIB.
 */
 
+#define _GNU_SOURCE
+
 #include "fuse_config.h"
 #include "fuse_lowlevel.h"
 #include "fuse_misc.h"
@@ -129,6 +131,10 @@ static void *fuse_do_work(void *data)
 {
 	struct fuse_worker *w = (struct fuse_worker *) data;
 	struct fuse_mt *mt = w->mt;
+
+#ifdef HAVE_PTHREAD_SETNAME_NP
+	pthread_setname_np(pthread_self(), "fuse_worker");
+#endif
 
 	while (!fuse_session_exited(mt->se)) {
 		int isforget = 0;
@@ -269,9 +275,15 @@ static int fuse_clone_chan_fd_default(struct fuse_session *se)
 			strerror(errno));
 		return -1;
 	}
-#ifndef O_CLOEXEC
-	fcntl(clonefd, F_SETFD, FD_CLOEXEC);
-#endif
+	if (!O_CLOEXEC) {
+		res = fcntl(clonefd, F_SETFD, FD_CLOEXEC);
+		if (res == -1) {
+			fuse_log(FUSE_LOG_ERR, "fuse: failed to set CLOEXEC: %s\n",
+				strerror(errno));
+			close(clonefd);
+			return -1;
+		}
+	}
 
 	masterfd = se->fd;
 	res = ioctl(clonefd, FUSE_DEV_IOC_CLONE, &masterfd);

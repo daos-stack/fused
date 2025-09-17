@@ -9,13 +9,19 @@
   See the file COPYING.LIB
 */
 
+#define _GNU_SOURCE
+#include "fuse.h"
+#include <pthread.h>
+
 #include "fuse_config.h"
 #include "fuse_i.h"
 #include "fuse_lowlevel.h"
 #include "fuse_opt.h"
 #include "fuse_misc.h"
 #include "fuse_kernel.h"
+#include "util.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -85,10 +91,6 @@ struct node_table {
 	size_t size;
 	size_t split;
 };
-
-#define container_of(ptr, type, member) ({                              \
-			const typeof( ((type *)0)->member ) *__mptr = (ptr); \
-			(type *)( (char *)__mptr - offsetof(type,member) );})
 
 #define list_entry(ptr, type, member)           \
 	container_of(ptr, type, member)
@@ -163,6 +165,7 @@ struct node_lru {
 
 struct fuse_direntry {
 	struct stat stat;
+	enum fuse_fill_dir_flags flags;
 	char *name;
 	struct fuse_direntry *next;
 };
@@ -2603,11 +2606,11 @@ void fuse_fs_init(struct fuse_fs *fs, struct fuse_conn_info *conn,
 {
 	fuse_get_context()->private_data = fs->user_data;
 	if (!fs->op.write_buf)
-		conn->want &= ~FUSE_CAP_SPLICE_READ;
+		fuse_unset_feature_flag(conn, FUSE_CAP_SPLICE_READ);
 	if (!fs->op.lock)
-		conn->want &= ~FUSE_CAP_POSIX_LOCKS;
+		fuse_unset_feature_flag(conn, FUSE_CAP_POSIX_LOCKS);
 	if (!fs->op.flock)
-		conn->want &= ~FUSE_CAP_FLOCK_LOCKS;
+		fuse_unset_feature_flag(conn, FUSE_CAP_FLOCK_LOCKS);
 	if (fs->op.init)
 		fs->user_data = fs->op.init(conn, cfg);
 }
@@ -2619,8 +2622,7 @@ static void fuse_lib_init(void *data, struct fuse_conn_info *conn)
 	struct fuse *f = (struct fuse *) data;
 
 	fuse_create_context(f);
-	if(conn->capable & FUSE_CAP_EXPORT_SUPPORT)
-		conn->want |= FUSE_CAP_EXPORT_SUPPORT;
+	fuse_set_feature_flag(conn, FUSE_CAP_EXPORT_SUPPORT);
 	fuse_fs_init(f->fs, conn, &f->conf);
 
 	if (f->conf.intr) {
@@ -3438,7 +3440,7 @@ static int extend_contents(struct fuse_dh *dh, unsigned minsize)
 }
 
 static int fuse_add_direntry_to_dh(struct fuse_dh *dh, const char *name,
-				   struct stat *st)
+				   struct stat *st, enum fuse_fill_dir_flags flags)
 {
 	struct fuse_direntry *de;
 
@@ -3453,6 +3455,7 @@ static int fuse_add_direntry_to_dh(struct fuse_dh *dh, const char *name,
 		free(de);
 		return -1;
 	}
+	de->flags = flags;
 	de->stat = *st;
 	de->next = NULL;
 
@@ -3530,7 +3533,7 @@ static int fill_dir(void *dh_, const char *name, const struct stat *statp,
 	} else {
 		dh->filled = 1;
 
-		if (fuse_add_direntry_to_dh(dh, name, &stbuf) == -1)
+		if (fuse_add_direntry_to_dh(dh, name, &stbuf, flags) == -1)
 			return 1;
 	}
 	return 0;
@@ -3608,7 +3611,7 @@ static int fill_dir_plus(void *dh_, const char *name, const struct stat *statp,
 	} else {
 		dh->filled = 1;
 
-		if (fuse_add_direntry_to_dh(dh, name, &e.attr) == -1)
+		if (fuse_add_direntry_to_dh(dh, name, &e.attr, flags) == -1)
 			return 1;
 	}
 
@@ -3696,7 +3699,8 @@ static int readdir_fill_from_list(fuse_req_t req, struct fuse_dh *dh,
 				.attr = de->stat,
 			};
 
-			if (!is_dot_or_dotdot(de->name)) {
+			if (de->flags & FUSE_FILL_DIR_PLUS &&
+			    !is_dot_or_dotdot(de->name)) {
 				res = do_lookup(dh->fuse, dh->nodeid,
 						de->name, &e);
 				if (res) {
@@ -4888,6 +4892,10 @@ static void *fuse_prune_nodes(void *fuse)
 	struct fuse *f = fuse;
 	int sleep_time;
 
+#ifdef HAVE_PTHREAD_SETNAME_NP
+	pthread_setname_np(pthread_self(), "fuse_prune_nodes");
+#endif
+
 	while(1) {
 		sleep_time = fuse_clean_cache(f);
 		sleep(sleep_time);
@@ -4917,15 +4925,9 @@ void fuse_stop_cleanup_thread(struct fuse *f)
  * Not supposed to be called directly, but supposed to be called
  * through the fuse_new macro
  */
-struct fuse *_fuse_new_317(struct fuse_args *args,
-			   const struct fuse_operations *op,
-			   size_t op_size, struct libfuse_version *version,
-			   void *user_data);
-FUSE_SYMVER("_fuse_new_317", "_fuse_new@@FUSE_3.17")
-struct fuse *_fuse_new_317(struct fuse_args *args,
-			   const struct fuse_operations *op,
-			   size_t op_size, struct libfuse_version *version,
-			   void *user_data)
+struct fuse *_fuse_new_31(struct fuse_args *args,
+			  const struct fuse_operations *op, size_t op_size,
+			  struct libfuse_version *version, void *user_data)
 {
 	struct fuse *f;
 	struct node *root;
@@ -5007,7 +5009,13 @@ struct fuse *_fuse_new_317(struct fuse_args *args,
 	f->conf.readdir_ino = 1;
 #endif
 
-	f->se = _fuse_session_new(args, &llop, sizeof(llop), version, f);
+	/* not declared globally, to restrict usage of this function */
+	struct fuse_session *fuse_session_new_versioned(
+		struct fuse_args *args, const struct fuse_lowlevel_ops *op,
+		size_t op_size, struct libfuse_version *version,
+		void *userdata);
+	f->se = fuse_session_new_versioned(args, &llop, sizeof(llop), version,
+					   f);
 	if (f->se == NULL)
 		goto out_free_fs;
 
@@ -5064,10 +5072,6 @@ out:
 }
 
 /* Emulates 3.0-style fuse_new(), which processes --help */
-struct fuse *_fuse_new_30(struct fuse_args *args, const struct fuse_operations *op,
-			 size_t op_size,
-			 struct libfuse_version *version,
-			 void *user_data);
 FUSE_SYMVER("_fuse_new_30", "_fuse_new@FUSE_3.0")
 struct fuse *_fuse_new_30(struct fuse_args *args,
 			 const struct fuse_operations *op,
@@ -5091,7 +5095,7 @@ struct fuse *_fuse_new_30(struct fuse_args *args,
 		fuse_lib_help(args);
 		return NULL;
 	} else
-		return _fuse_new_317(args, op, op_size, version, user_data);
+		return _fuse_new_31(args, op, op_size, version, user_data);
 }
 
 /* ABI compat version */
@@ -5105,7 +5109,7 @@ struct fuse *fuse_new_31(struct fuse_args *args,
 		/* unknown version */
 	struct libfuse_version version = { 0 };
 
-	return _fuse_new_317(args, op, op_size, &version, user_data);
+	return _fuse_new_31(args, op, op_size, &version, user_data);
 }
 
 /*
