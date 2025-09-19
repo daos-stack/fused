@@ -1,5 +1,7 @@
-project('libfused', ['c'], version: '1.0.0',
-        meson_version: '>= 0.51',
+project('libfused',
+        ['c'],
+        version: '1.1.0', # synced with fuse-3.17.4
+        meson_version: '>= 0.60.0',
         default_options: [
             'buildtype=debugoptimized',
             'c_std=gnu11',
@@ -11,10 +13,16 @@ project('libfused', ['c'], version: '1.0.0',
 # from integers, i.e. concatenating strings instead
 # of splitting a string, but 'project' needs to be
 # the first meson.build keyword...
-version_list = meson.project_version().split('.')
+
+# split version into base and rc
+version_parts = meson.project_version().split('-')
+base_version = version_parts[0]
+
+version_list = base_version.split('.')
 FUSE_MAJOR_VERSION = version_list[0]
 FUSE_MINOR_VERSION = version_list[1]
 FUSE_HOTFIX_VERSION = version_list[2]
+FUSE_RC_VERSION = version_parts.length() > 1 ? version_parts[1] : ''
 
 platform = host_machine.system()
 if platform == 'darwin'
@@ -29,12 +37,6 @@ endif
 cc = meson.get_compiler('c')
 
 #
-# Feature detection, only available at libfuse compilation time,
-# but not for application linking to libfuse.
-#
-private_cfg = configuration_data()
-
-#
 # Feature detection, the resulting config file is installed
 # with the package.
 # Note: Symbols need to be care fully named, to avoid conflicts
@@ -46,6 +48,7 @@ public_cfg = configuration_data()
 public_cfg.set('FUSE_MAJOR_VERSION', FUSE_MAJOR_VERSION)
 public_cfg.set('FUSE_MINOR_VERSION', FUSE_MINOR_VERSION)
 public_cfg.set('FUSE_HOTFIX_VERSION', FUSE_HOTFIX_VERSION)
+public_cfg.set('FUSE_RC_VERSION', FUSE_RC_VERSION)
 
 # Default includes when checking for presence of functions and
 # struct members
@@ -57,9 +60,15 @@ include_default = '''
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <pthread.h>    /* For pthread_setname_np */
 '''
 args_default = [ '-D_GNU_SOURCE' ]
 
+#
+# Feature detection, only available at libfuse compilation time,
+# but not for application linking to libfuse.
+#
+private_cfg = configuration_data()
 private_cfg.set_quoted('PACKAGE_VERSION', meson.project_version())
 
 # Test for presence of some functions
@@ -70,22 +79,51 @@ foreach func : test_funcs
     private_cfg.set('HAVE_' + func.to_upper(),
         cc.has_function(func, prefix: include_default, args: args_default))
 endforeach
-private_cfg.set('HAVE_SETXATTR', 
-        cc.has_function('setxattr', prefix: '#include <sys/xattr.h>'))
-private_cfg.set('HAVE_ICONV', 
-        cc.has_function('iconv', prefix: '#include <iconv.h>'))
-private_cfg.set('HAVE_BACKTRACE',
-        cc.has_function('backtrace', prefix: '#include <execinfo.h>'))
 
-# Test if structs have specific member
+# Special case checks that need custom code
+special_funcs = {
+    'pthread_setname_np': '''
+        #include <pthread.h>
+        int main(void) {
+            pthread_t thread = pthread_self();
+            pthread_setname_np(thread, "test");
+            return 0;
+        }
+    ''',
+    'close_range': '''
+        #include <unistd.h>
+        #include <fcntl.h>
+        #include <linux/close_range.h>
+        int main(void) {
+            unsigned int flags = CLOSE_RANGE_UNSHARE;
+            return close_range(3, ~0U, flags);
+        }
+    '''
+}
+
+foreach name, code : special_funcs
+    private_cfg.set('HAVE_' + name.to_upper(),
+        cc.links(code, args: args_default,
+                 name: name + ' check'))
+endforeach
+
+# Regular function checks
+private_cfg.set('HAVE_SETXATTR',
+    cc.has_function('setxattr', prefix: '#include <sys/xattr.h>'))
+private_cfg.set('HAVE_ICONV',
+    cc.has_function('iconv', prefix: '#include <iconv.h>'))
+private_cfg.set('HAVE_BACKTRACE',
+    cc.has_function('backtrace', prefix: '#include <execinfo.h>'))
+
+# Struct member checks
 private_cfg.set('HAVE_STRUCT_STAT_ST_ATIM',
-         cc.has_member('struct stat', 'st_atim',
-                       prefix: include_default,
-                       args: args_default))
+    cc.has_member('struct stat', 'st_atim',
+                  prefix: include_default + '#include <sys/stat.h>',
+                  args: args_default))
 private_cfg.set('HAVE_STRUCT_STAT_ST_ATIMESPEC',
-         cc.has_member('struct stat', 'st_atimespec',
-                       prefix: include_default,
-                       args: args_default))
+    cc.has_member('struct stat', 'st_atimespec',
+                  prefix: include_default + '#include <sys/stat.h>',
+                  args: args_default))
 
 #
 # Compiler configuration

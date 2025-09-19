@@ -8,8 +8,12 @@
 
 #include "fuse.h"
 #include "fuse_lowlevel.h"
+#include "util.h"
 
+#include <stdint.h>
 #include <stdbool.h>
+#include <errno.h>
+#include <stdatomic.h>
 
 #define MIN(a, b) \
 ({									\
@@ -51,7 +55,7 @@ struct fuse_notify_req {
 };
 
 struct fuse_session {
-	char *mountpoint;
+	_Atomic(char *)mountpoint;
 	volatile int exited;
 	int fd;
 	struct fuse_custom_io *io;
@@ -72,14 +76,23 @@ struct fuse_session {
 	int broken_splice_nonblock;
 	uint64_t notify_ctr;
 	struct fuse_notify_req notify_list;
-	size_t bufsize;
+	_Atomic size_t bufsize;
 	int error;
 
 	/* This is useful if any kind of ABI incompatibility is found at
 	 * a later version, to 'fix' it at run time.
 	 */
 	struct libfuse_version version;
+
+	/* true if reading requests from /dev/fuse are handled internally */
 	bool buf_reallocable;
+
+	/*
+	 * conn->want and conn_want_ext options set by libfuse , needed
+	 * to correctly convert want to want_ext
+	 */
+	uint32_t conn_want;
+	uint64_t conn_want_ext;
 };
 
 struct fuse_chan {

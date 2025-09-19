@@ -44,6 +44,7 @@
 
 #define FUSERMOUNT_PROG		"fusermount3"
 #define FUSE_COMMFD_ENV		"_FUSE_COMMFD"
+#define FUSE_COMMFD2_ENV	"_FUSE_COMMFD2"
 
 #ifndef HAVE_FORK
 #define fork() vfork()

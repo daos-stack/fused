@@ -76,7 +76,7 @@ enum fuse_fill_dir_flags {
  * stream. It does not need to be the actual physical position. A
  * value of zero is reserved to indicate that seeking in directories
  * is not supported.
- * 
+ *
  * @param buf the buffer passed to the readdir() operation
  * @param name the file name of the directory entry
  * @param stbuf file attributes, can be NULL
@@ -103,22 +103,22 @@ struct fuse_config {
 	 * If `set_gid` is non-zero, the st_gid attribute of each file
 	 * is overwritten with the value of `gid`.
 	 */
-	int set_gid;
-	unsigned int gid;
+	int32_t set_gid;
+	uint32_t gid;
 
 	/**
 	 * If `set_uid` is non-zero, the st_uid attribute of each file
 	 * is overwritten with the value of `uid`.
 	 */
-	int set_uid;
-	unsigned int uid;
+	int32_t set_uid;
+	uint32_t uid;
 
 	/**
 	 * If `set_mode` is non-zero, the any permissions bits set in
 	 * `umask` are unset in the st_mode attribute of each file.
 	 */
-	int set_mode;
-	unsigned int umask;
+	int32_t set_mode;
+	uint32_t umask;
 
 	/**
 	 * The timeout in seconds for which name lookups will be
@@ -145,14 +145,14 @@ struct fuse_config {
 	/**
 	 * Allow requests to be interrupted
 	 */
-	int intr;
+	int32_t intr;
 
 	/**
 	 * Specify which signal number to send to the filesystem when
 	 * a request is interrupted.  The default is hardcoded to
 	 * USR1.
 	 */
-	int intr_signal;
+	int32_t intr_signal;
 
 	/**
 	 * Normally, FUSE assigns inodes to paths only for as long as
@@ -164,7 +164,7 @@ struct fuse_config {
 	 * A number of -1 means that inodes will be remembered for the
 	 * entire life-time of the file-system process.
 	 */
-	int remember;
+	int32_t remember;
 
 	/**
 	 * The default behavior is that if an open file is deleted,
@@ -182,7 +182,7 @@ struct fuse_config {
 	 * ENOENT): read(2), write(2), fsync(2), close(2), f*xattr(2),
 	 * ftruncate(2), fstat(2), fchmod(2), fchown(2)
 	 */
-	int hard_remove;
+	int32_t hard_remove;
 
 	/**
 	 * Honor the st_ino field in the functions getattr() and
@@ -192,10 +192,10 @@ struct fuse_config {
 	 * have to guarantee uniqueness, however some applications
 	 * rely on this value being unique for the whole filesystem.
 	 *
-	 * Note that this does *not* affect the inode that libfuse 
+	 * Note that this does *not* affect the inode that libfuse
 	 * and the kernel use internally (also called the "nodeid").
 	 */
-	int use_ino;
+	int32_t use_ino;
 
 	/**
 	 * If use_ino option is not given, still try to fill in the
@@ -204,7 +204,7 @@ struct fuse_config {
 	 * found there will be used.  Otherwise it will be set to -1.
 	 * If use_ino option is given, this option is ignored.
 	 */
-	int readdir_ino;
+	int32_t readdir_ino;
 
 	/**
 	 * This option disables the use of page cache (file content cache)
@@ -223,7 +223,7 @@ struct fuse_config {
 	 * `direct_io` field of `struct fuse_file_info` - overwriting
 	 * any value that was put there by the file system.
 	 */
-	int direct_io;
+	int32_t direct_io;
 
 	/**
 	 * This option disables flushing the cache of the file
@@ -242,7 +242,7 @@ struct fuse_config {
 	 * `keep_cache` field of `struct fuse_file_info` - overwriting
 	 * any value that was put there by the file system.
 	 */
-	int kernel_cache;
+	int32_t kernel_cache;
 
 	/**
 	 * This option is an alternative to `kernel_cache`. Instead of
@@ -250,22 +250,14 @@ struct fuse_config {
 	 * invalidated on open(2) if if the modification time or the
 	 * size of the file has changed since it was last opened.
 	 */
-	int auto_cache;
+	int32_t auto_cache;
 
-	/**
-	 * By default, fuse waits for all pending writes to complete
-	 * and calls the FLUSH operation on close(2) of every fuse fd.
-	 * With this option, wait and FLUSH are not done for read-only
-	 * fuse fd, similar to the behavior of NFS/SMB clients.
-	 */
-	int no_rofd_flush;
-
-	/**
+	/*
 	 * The timeout in seconds for which file attributes are cached
 	 * for the purpose of checking if auto_cache should flush the
 	 * file data on open.
 	 */
-	int ac_attr_timeout_set;
+	int32_t ac_attr_timeout_set;
 	double ac_attr_timeout;
 
 	/**
@@ -278,7 +270,31 @@ struct fuse_config {
 	 * operations the path will be provided only if the struct
 	 * fuse_file_info argument is NULL.
 	 */
-	int nullpath_ok;
+	int32_t nullpath_ok;
+
+	/**
+	 * These 3 options are used by libfuse internally and
+	 * should not be touched.
+	 */
+	int32_t show_help;
+	char *modules;
+	int32_t debug;
+
+	/**
+	 * `fmask` and `dmask` function the same way as `umask`, but apply
+	 * to files and directories separately. If non-zero, `fmask` and
+	 * `dmask` take precedence over the `umask` setting.
+	 */
+	uint32_t fmask;
+	uint32_t dmask;
+
+	/**
+	 * By default, fuse waits for all pending writes to complete
+	 * and calls the FLUSH operation on close(2) of every fuse fd.
+	 * With this option, wait and FLUSH are not done for read-only
+	 * fuse fd, similar to the behavior of NFS/SMB clients.
+	 */
+	int32_t no_rofd_flush;
 
 	/**
 	 *  Allow parallel direct-io writes to operate on the same file.
@@ -293,23 +309,18 @@ struct fuse_config {
 	 *  enabling this setting, all direct writes on the same file are
 	 *  serialized, resulting in huge data bandwidth loss).
 	 */
-	int parallel_direct_writes;
+	int32_t parallel_direct_writes;
+
 
 	/**
-	 * These 3 options are used by libfuse internally and
-	 * should not be touched.
+	 * Reserved for future use.
 	 */
-	int show_help;
-	char *modules;
-	int debug;
+	uint32_t flags;
 
 	/**
-	 * `fmask` and `dmask` function the same way as `umask`, but apply
-	 * to files and directories separately. If non-zero, `fmask` and
-	 * `dmask` take precedence over the `umask` setting.
+	 * Reserved for future use.
 	 */
-	unsigned int fmask;
-	unsigned int dmask;
+	uint64_t reserved[48];
 };
 
 
@@ -511,9 +522,9 @@ struct fuse_operations {
 	 *
 	 * Flush is called on each close() of a file descriptor, as opposed to
 	 * release which is called on the close of the last file descriptor for
-	 * a file.  Under Linux, errors returned by flush() will be passed to 
+	 * a file.  Under Linux, errors returned by flush() will be passed to
 	 * userspace as errors from close(), so flush() is a good place to write
-	 * back any cached dirty data. However, many applications ignore errors 
+	 * back any cached dirty data. However, many applications ignore errors
 	 * on close(), and on non-Linux systems, close() may succeed even if flush()
 	 * returns an error. For these reasons, filesystems should not assume
 	 * that errors returned by flush will ever be noticed or even
@@ -866,21 +877,30 @@ struct fuse_context {
 	mode_t umask;
 };
 
-#if (defined(LIBFUSE_BUILT_WITH_VERSIONED_SYMBOLS))
 /**
  * The real main function
  *
  * Do not call this directly, use fuse_main()
  */
-int fuse_main_real(int argc, char *argv[], const struct fuse_operations *op,
-		   size_t op_size, struct libfuse_version *version,
-		   void *user_data);
-#else
-int fuse_main_real_317(int argc, char *argv[], const struct fuse_operations *op,
-		   size_t op_size, struct libfuse_version *version, void *user_data);
-#define fuse_main_real(argc, argv, op, op_size, version, user_data) \
-	fuse_main_real_317(argc, argv, op, op_size, version, user_data);
-#endif
+int fuse_main_real_versioned(int argc, char *argv[],
+			     const struct fuse_operations *op, size_t op_size,
+			     struct libfuse_version *version, void *user_data);
+static inline int fuse_main_real(int argc, char *argv[],
+				 const struct fuse_operations *op,
+				 size_t op_size, void *user_data)
+{
+	struct libfuse_version version = { .major = FUSE_MAJOR_VERSION,
+					   .minor = FUSE_MINOR_VERSION,
+					   .hotfix = FUSE_HOTFIX_VERSION,
+					   .padding = 0 };
+
+	fuse_log(FUSE_LOG_ERR,
+		 "%s is a libfuse internal function, please use fuse_main()\n",
+		 __func__);
+
+	return fuse_main_real_versioned(argc, argv, op, op_size, &version,
+					user_data);
+}
 
 /**
  * Main function of FUSE.
@@ -936,9 +956,9 @@ int fuse_main_real_317(int argc, char *argv[], const struct fuse_operations *op,
  *
  * Example usage, see hello.c
  */
-static inline int
-fuse_main(int argc, char *argv[], const struct fuse_operations *op,
-	  void *user_data)
+static inline int fuse_main_fn(int argc, char *argv[],
+			       const struct fuse_operations *op,
+			       void *user_data)
 {
 	struct libfuse_version version = {
 		.major  = FUSE_MAJOR_VERSION,
@@ -946,9 +966,12 @@ fuse_main(int argc, char *argv[], const struct fuse_operations *op,
 		.hotfix = FUSE_HOTFIX_VERSION,
 		.padding = 0
 	};
-	return fuse_main_real(argc, argv, op, sizeof(*(op)), &version,
-			      user_data);
+
+	return fuse_main_real_versioned(argc, argv, op, sizeof(*(op)), &version,
+					user_data);
 }
+#define fuse_main(argc, argv, op, user_data) \
+	fuse_main_fn(argc, argv, op, user_data)
 
 /* ----------------------------------------------------------- *
  * More detailed API					       *
@@ -967,10 +990,13 @@ fuse_main(int argc, char *argv[], const struct fuse_operations *op,
  */
 void fuse_lib_help(struct fuse_args *args);
 
-struct fuse *_fuse_new(struct fuse_args *args,
-		       const struct fuse_operations *op,
-		       size_t op_size, struct libfuse_version *version,
-		       void *user_data);
+/* Do not call this directly, use fuse_new() instead */
+struct fuse *_fuse_new_30(struct fuse_args *args,
+			  const struct fuse_operations *op, size_t op_size,
+			  struct libfuse_version *version, void *user_data);
+struct fuse *_fuse_new_31(struct fuse_args *args,
+			  const struct fuse_operations *op, size_t op_size,
+			  struct libfuse_version *version, void *user_data);
 
 /**
  * Create a new FUSE filesystem.
@@ -1000,13 +1026,9 @@ struct fuse *_fuse_new(struct fuse_args *args,
  * @return the created FUSE handle
  */
 #if FUSE_USE_VERSION == 30
-struct fuse *_fuse_new_30(struct fuse_args *args,
-			 const struct fuse_operations *op,
-			 size_t op_size, void *user_data);
-static inline struct fuse *
-fuse_new(struct fuse_args *args,
-	 const struct fuse_operations *op, size_t op_size,
-	 void *user_data)
+static inline struct fuse *fuse_new_fn(struct fuse_args *args,
+				       const struct fuse_operations *op,
+				       size_t op_size, void *user_data)
 {
 	struct libfuse_version version = {
 		.major = FUSE_MAJOR_VERSION,
@@ -1017,12 +1039,10 @@ fuse_new(struct fuse_args *args,
 
 	return _fuse_new_30(args, op, op_size, &version, user_data);
 }
-#else
-#if (defined(LIBFUSE_BUILT_WITH_VERSIONED_SYMBOLS))
-static inline struct fuse *
-fuse_new(struct fuse_args *args,
-	 const struct fuse_operations *op, size_t op_size,
-	 void *user_data)
+#else /* FUSE_USE_VERSION */
+static inline struct fuse *fuse_new_fn(struct fuse_args *args,
+				       const struct fuse_operations *op,
+				       size_t op_size, void *user_data)
 {
 	struct libfuse_version version = {
 		.major = FUSE_MAJOR_VERSION,
@@ -1031,31 +1051,10 @@ fuse_new(struct fuse_args *args,
 		.padding = 0
 	};
 
-	return _fuse_new(args, op, op_size, &version, user_data);
+	return _fuse_new_31(args, op, op_size, &version, user_data);
 }
-#else /* LIBFUSE_BUILT_WITH_VERSIONED_SYMBOLS */
-struct fuse *_fuse_new_317(struct fuse_args *args,
-                      const struct fuse_operations *op, size_t op_size,
-		      struct libfuse_version *version,
-		      void *private_data);
-#define _fuse_new(args, op, size, version, data) \
-	_fuse_new_317(args, op, size, version, data)
-static inline struct fuse *
-fuse_new(struct fuse_args *args,
-	 const struct fuse_operations *op, size_t op_size,
-	 void *user_data)
-{
-	struct libfuse_version version = {
-		.major = FUSE_MAJOR_VERSION,
-		.minor = FUSE_MINOR_VERSION,
-		.hotfix = FUSE_HOTFIX_VERSION,
-		.padding = 0
-	};
-
-	return _fuse_new(args, op, op_size, &version, user_data);
-}
-#endif /* LIBFUSE_BUILT_WITH_VERSIONED_SYMBOLS */
 #endif
+#define fuse_new(args, op, size, data) fuse_new_fn(args, op, size, data)
 
 /**
  * Mount a FUSE file system.
