@@ -1,3 +1,48 @@
+libfuse 3.18.2 (2026-03-18)
+===========================
+* Fix two io-uring issues that might be security critical
+  * fuse-io-uring: Fix UAF and NULL deref in startup error path
+  * fuse-io-uring: Fix NULL deref and memory leak in fuse_uring_init_queue
+
+libfuse 3.18.1 (2025-12-20)
+===========================
+* Fix a critical ABI issue compared to libfuse-3.17.3+
+* Note: This breaks ABI compatibility to libfuse-3.18.0
+  (given that 3.18.0 is out for 2 days only, probably the lesser evil)
+
+libfuse 3.18.0 (2025-12-18)
+===========================
+
+New Features
+------------
+
+* fuse-over-io-uring communication
+* statx support
+* Request timeouts: Prevent hung operations
+* FUSE_NOTIFY_INC_EPOCH: New notification mechanism for epoch counters
+
+Important Fixes
+----------------
+
+* Fixed double unmount on FUSE_DESTROY
+* Fixed junk readdirplus results when filesystem doesn't fill stat info
+* Fixed memory deallocation in fuse_session_loop_remember
+* Fixed COPY_FILE_RANGE interface
+
+Platform Support
+----------------
+
+* Improved FreeBSD support (mount error reporting, test runner, build fixes)
+* Fixed 32-bit architecture builds
+* Fixed build with musl libc and older kernels (< 5.9)
+
+Other Improvements
+------------------
+
+* Added PanFS to fusermount whitelist
+* Thread naming support for easier debugging
+
+
 libfuse 3.17.4 (2025-08-19)
 ===========================
 - Try to detect mount-utils by checking for /run/mount/utab
