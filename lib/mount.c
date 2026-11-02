@@ -8,7 +8,6 @@
   See the file LGPL2.txt.
 */
 
-/* For environ */
 #define _GNU_SOURCE
 
 #include "fuse_config.h"
@@ -25,7 +24,6 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <poll.h>
-#include <spawn.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -123,31 +121,42 @@ static const struct fuse_opt fuse_mount_opts[] = {
 };
 
 /*
- * Running fusermount by calling 'posix_spawn'
+ * Running fusermount by calling fork + exec. DAOS: posix_spawn() is not used
+ * because its CLONE_VM|CLONE_VFORK child cannot run under valgrind.
  *
+ * @param quiet redirect the child's stdout/stderr to /dev/null
+ * @param close_fd fd to close in the child, or -1
  * @param out_pid might be NULL
  */
-static int fusermount_posix_spawn(posix_spawn_file_actions_t *action,
-				  char const * const argv[], pid_t *out_pid)
+static int fusermount_fork_exec(char const * const argv[], int quiet,
+				int close_fd, pid_t *out_pid)
 {
-	const char *full_path = FUSERMOUNT_DIR "/" FUSERMOUNT_PROG;
-	pid_t pid;
+	pid_t pid = fork();
 
-	/* See man 7 environ for the global environ pointer */
+	if (pid == -1) {
+		int err = errno;
 
-	/* first try the install path */
-	int status = posix_spawn(&pid, full_path,  action, NULL,
-				 (char * const *) argv, environ);
-	if (status != 0) {
-		/* if that fails, try a system install */
-		status = posix_spawnp(&pid, FUSERMOUNT_PROG, action, NULL,
-				      (char * const *) argv, environ);
+		fuse_log(FUSE_LOG_ERR, "fork() for '%s' failed: %s\n",
+			 FUSERMOUNT_PROG, strerror(err));
+		return -err;
 	}
 
-	if (status != 0) {
-		fuse_log(FUSE_LOG_ERR, "Failed to call '%s': %s\n",
-			 FUSERMOUNT_PROG, strerror(status));
-		return -status;
+	if (pid == 0) {
+		if (quiet) {
+			int fd = open("/dev/null", O_WRONLY);
+
+			if (fd != -1) {
+				dup2(fd, STDOUT_FILENO);
+				dup2(fd, STDERR_FILENO);
+			}
+		}
+		if (close_fd != -1)
+			close(close_fd);
+
+		/* first try the install path, then a system install */
+		execv(FUSERMOUNT_DIR "/" FUSERMOUNT_PROG, (char * const *) argv);
+		execvp(FUSERMOUNT_PROG, (char * const *) argv);
+		_exit(1);
 	}
 
 	if (out_pid)
@@ -161,7 +170,7 @@ static int fusermount_posix_spawn(posix_spawn_file_actions_t *action,
 void fuse_mount_version(void)
 {
 	char const *const argv[] = {FUSERMOUNT_PROG, "--version", NULL};
-	int status = fusermount_posix_spawn(NULL, argv, NULL);
+	int status = fusermount_fork_exec(argv, 0, -1, NULL);
 
 	if(status != 0)
 		fuse_log(FUSE_LOG_ERR, "Running '%s --version' failed",
@@ -343,7 +352,7 @@ void fuse_kern_unmount(const char *mountpoint, int fd)
 	char const * const argv[] =
 		{ FUSERMOUNT_PROG, "--unmount", "--quiet", "--lazy",
 				"--", mountpoint, NULL };
-	int status = fusermount_posix_spawn(NULL, argv, NULL);
+	int status = fusermount_fork_exec(argv, 0, -1, NULL);
 	if(status != 0) {
 		fuse_log(FUSE_LOG_ERR, "Spawning %s to unmount failed: %s",
 			 FUSERMOUNT_PROG, strerror(-status));
@@ -389,28 +398,16 @@ static int setup_auto_unmount(const char *mountpoint, int quiet)
 		NULL,
 	};
 
-	// TODO: add error handling for all manipulations of action.
-	posix_spawn_file_actions_t action;
-	posix_spawn_file_actions_init(&action);
-
-	if (quiet) {
-		posix_spawn_file_actions_addopen(&action, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
-		posix_spawn_file_actions_addopen(&action, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
-	}
-	posix_spawn_file_actions_addclose(&action, fds[1]);
-
 	/*
 	 * auto-umount runs in the background - it is not waiting for the
 	 * process
 	 */
-	int status = fusermount_posix_spawn(&action, argv, &pid);
-
-	posix_spawn_file_actions_destroy(&action);
+	int status = fusermount_fork_exec(argv, quiet, fds[1], &pid);
 
 	if(status != 0) {
 		close(fds[0]);
 		close(fds[1]);
-		fuse_log(FUSE_LOG_ERR, "fuse: Setting up auto-unmount failed (spawn): %s",
+		fuse_log(FUSE_LOG_ERR, "fuse: Setting up auto-unmount failed (fork): %s",
 			     strerror(-status));
 		return -1;
 	}
@@ -463,23 +460,12 @@ static int fuse_mount_fusermount(const char *mountpoint, struct mount_opts *mo,
 	};
 
 
-	posix_spawn_file_actions_t action;
-	posix_spawn_file_actions_init(&action);
-
-	if (quiet) {
-		posix_spawn_file_actions_addopen(&action, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
-		posix_spawn_file_actions_addopen(&action, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
-	}
-	posix_spawn_file_actions_addclose(&action, fds[1]);
-
-	int status = fusermount_posix_spawn(&action, argv, &pid);
-
-	posix_spawn_file_actions_destroy(&action);
+	int status = fusermount_fork_exec(argv, quiet, fds[1], &pid);
 
 	if(status != 0) {
 		close(fds[0]);
 		close(fds[1]);
-		fuse_log(FUSE_LOG_ERR, "posix_spawn(p)() for %s failed: %s",
+		fuse_log(FUSE_LOG_ERR, "fork() for %s failed: %s",
 			 FUSERMOUNT_PROG, strerror(-status));
 		return -1;
 	}
