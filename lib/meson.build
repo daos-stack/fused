@@ -44,7 +44,7 @@ fusermount_path = join_paths(get_option('prefix'), get_option('bindir'))
 libfuse = library('fused',
                   libfuse_sources,
                   version: base_version,
-                  soversion: '4',
+                  soversion: '1',
                   include_directories: include_dirs,
                   dependencies: deps,
                   install: true,

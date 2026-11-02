@@ -1,5 +1,5 @@
 project('libfused', ['c'],
-        version: '3.18.3',
+        version: '1.2.0', # synced with fuse-3.18.3
         meson_version: '>= 0.60.0',
         default_options: [
             'buildtype=debugoptimized',
