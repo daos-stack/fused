@@ -4,7 +4,7 @@
   Copyright (C) 2008       Tejun Heo <teheo@suse.de>
 
   This program can be distributed under the terms of the GNU GPLv2.
-  See the file COPYING.
+  See the file GPL2.txt.
 */
 
 /** @file
@@ -16,7 +16,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall ioctl.c `pkg-config fused --cflags --libs` -o ioctl
+ *     gcc -Wall ioctl.c `pkg-config fuse3 --cflags --libs` -o ioctl
  *
  * ## Source code ##
  * \include ioctl.c

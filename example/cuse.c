@@ -4,7 +4,7 @@
   Copyright (C) 2008-2009  Tejun Heo <tj@kernel.org>
 
   This program can be distributed under the terms of the GNU GPLv2.
-  See the file COPYING.
+  See the file GPL2.txt.
 
 */
 
@@ -24,7 +24,7 @@
  *
  * To compile this example, run
  *
- *     gcc -Wall cuse.c `pkg-config fused --cflags --libs` -o cuse
+ *     gcc -Wall cuse.c `pkg-config fuse3 --cflags --libs` -o cuse
  *
  * ## Source code ##
  * \include cuse.c

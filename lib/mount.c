@@ -5,8 +5,10 @@
   Architecture specific file system mounting (Linux).
 
   This program can be distributed under the terms of the GNU LGPLv2.
-  See the file COPYING.LIB.
+  See the file LGPL2.txt.
 */
+
+#define _GNU_SOURCE
 
 #include "fuse_config.h"
 #include "fuse_i.h"
@@ -45,10 +47,7 @@
 #define FUSERMOUNT_PROG		"fusermount3"
 #define FUSE_COMMFD_ENV		"_FUSE_COMMFD"
 #define FUSE_COMMFD2_ENV	"_FUSE_COMMFD2"
-
-#ifndef HAVE_FORK
-#define fork() vfork()
-#endif
+#define FUSE_KERN_DEVICE_ENV	"FUSE_KERN_DEVICE"
 
 #ifndef MS_DIRSYNC
 #define MS_DIRSYNC 128
@@ -121,21 +120,61 @@ static const struct fuse_opt fuse_mount_opts[] = {
 	FUSE_OPT_END
 };
 
-static void exec_fusermount(const char *argv[])
+/*
+ * Running fusermount by calling fork + exec. DAOS: posix_spawn() is not used
+ * because its CLONE_VM|CLONE_VFORK child cannot run under valgrind.
+ *
+ * @param quiet redirect the child's stdout/stderr to /dev/null
+ * @param close_fd fd to close in the child, or -1
+ * @param out_pid might be NULL
+ */
+static int fusermount_fork_exec(char const * const argv[], int quiet,
+				int close_fd, pid_t *out_pid)
 {
-	execv(FUSERMOUNT_DIR "/" FUSERMOUNT_PROG, (char **) argv);
-	execvp(FUSERMOUNT_PROG, (char **) argv);
+	pid_t pid = fork();
+
+	if (pid == -1) {
+		int err = errno;
+
+		fuse_log(FUSE_LOG_ERR, "fork() for '%s' failed: %s\n",
+			 FUSERMOUNT_PROG, strerror(err));
+		return -err;
+	}
+
+	if (pid == 0) {
+		if (quiet) {
+			int fd = open("/dev/null", O_WRONLY);
+
+			if (fd != -1) {
+				dup2(fd, STDOUT_FILENO);
+				dup2(fd, STDERR_FILENO);
+			}
+		}
+		if (close_fd != -1)
+			close(close_fd);
+
+		/* first try the install path, then a system install */
+		execv(FUSERMOUNT_DIR "/" FUSERMOUNT_PROG, (char * const *) argv);
+		execvp(FUSERMOUNT_PROG, (char * const *) argv);
+		_exit(1);
+	}
+
+	if (out_pid)
+		*out_pid = pid;
+	else
+		waitpid(pid, NULL, 0); /* FIXME: check exit code and return error if any */
+
+	return 0;
 }
 
 void fuse_mount_version(void)
 {
-	int pid = fork();
-	if (!pid) {
-		const char *argv[] = { FUSERMOUNT_PROG, "--version", NULL };
-		exec_fusermount(argv);
-		_exit(1);
-	} else if (pid != -1)
-		waitpid(pid, NULL, 0);
+	char const *const argv[] = {FUSERMOUNT_PROG, "--version", NULL};
+	int status = fusermount_fork_exec(argv, 0, -1, NULL);
+
+	if(status != 0)
+		fuse_log(FUSE_LOG_ERR, "Running '%s --version' failed",
+			 FUSERMOUNT_PROG);
 }
 
 struct mount_flags {
@@ -255,7 +294,7 @@ static int receive_fd(int fd)
 
 	while(((rv = recvmsg(fd, &msg, 0)) == -1) && errno == EINTR);
 	if (rv == -1) {
-		perror("recvmsg");
+		fuse_log(FUSE_LOG_ERR, "recvmsg failed: %s", strerror(errno));
 		return -1;
 	}
 	if(!rv) {
@@ -264,6 +303,10 @@ static int receive_fd(int fd)
 	}
 
 	cmsg = CMSG_FIRSTHDR(&msg);
+	if (!cmsg) {
+		fuse_log(FUSE_LOG_ERR, "error retrieving control message header\n");
+		return -1;
+	}
 	if (cmsg->cmsg_type != SCM_RIGHTS) {
 		fuse_log(FUSE_LOG_ERR, "got control message of unknown type %d\n",
 			cmsg->cmsg_type);
@@ -275,7 +318,6 @@ static int receive_fd(int fd)
 void fuse_kern_unmount(const char *mountpoint, int fd)
 {
 	int res;
-	int pid;
 
 	if (fd != -1) {
 		struct pollfd pfd;
@@ -303,27 +345,25 @@ void fuse_kern_unmount(const char *mountpoint, int fd)
 		return;
 	}
 
-	res = umount2(mountpoint, 2);
+	res = umount2(mountpoint, MNT_DETACH | UMOUNT_NOFOLLOW);
 	if (res == 0)
 		return;
 
-	pid = fork();
-	if(pid == -1)
+	char const * const argv[] =
+		{ FUSERMOUNT_PROG, "--unmount", "--quiet", "--lazy",
+				"--", mountpoint, NULL };
+	int status = fusermount_fork_exec(argv, 0, -1, NULL);
+	if(status != 0) {
+		fuse_log(FUSE_LOG_ERR, "Spawning %s to unmount failed: %s",
+			 FUSERMOUNT_PROG, strerror(-status));
 		return;
-
-	if(pid == 0) {
-		const char *argv[] = { FUSERMOUNT_PROG, "-u", "-q", "-z",
-				       "--", mountpoint, NULL };
-
-		exec_fusermount(argv);
-		_exit(1);
 	}
-	waitpid(pid, NULL, 0);
 }
 
 static int setup_auto_unmount(const char *mountpoint, int quiet)
 {
-	int fds[2], pid;
+	int fds[2];
+	pid_t pid;
 	int res;
 
 	if (!mountpoint) {
@@ -333,59 +373,59 @@ static int setup_auto_unmount(const char *mountpoint, int quiet)
 
 	res = socketpair(PF_UNIX, SOCK_STREAM, 0, fds);
 	if(res == -1) {
-		perror("fuse: socketpair() failed");
+		fuse_log(FUSE_LOG_ERR, "Setting up auto-unmount socketpair() failed: %s\n",
+			 strerror(errno));
 		return -1;
 	}
 
-	pid = fork();
-	if(pid == -1) {
-		perror("fuse: fork() failed");
+	char arg_fd_entry[30];
+	snprintf(arg_fd_entry, sizeof(arg_fd_entry), "%i", fds[0]);
+	setenv(FUSE_COMMFD_ENV, arg_fd_entry, 1);
+	/*
+	 * This helps to identify the FD hold by parent process.
+	 * In auto-unmount case, parent process can close this FD explicitly to do unmount.
+	 * The FD[1] can be got via getenv(FUSE_COMMFD2_ENV).
+	 * One potential use case is to satisfy FD-Leak checks.
+	 */
+	snprintf(arg_fd_entry, sizeof(arg_fd_entry), "%i", fds[1]);
+	setenv(FUSE_COMMFD2_ENV, arg_fd_entry, 1);
+
+	char const *const argv[] = {
+		FUSERMOUNT_PROG,
+		"--auto-unmount",
+		"--",
+		mountpoint,
+		NULL,
+	};
+
+	/*
+	 * auto-umount runs in the background - it is not waiting for the
+	 * process
+	 */
+	int status = fusermount_fork_exec(argv, quiet, fds[1], &pid);
+
+	if(status != 0) {
 		close(fds[0]);
 		close(fds[1]);
+		fuse_log(FUSE_LOG_ERR, "fuse: Setting up auto-unmount failed (fork): %s",
+			     strerror(-status));
 		return -1;
 	}
-
-	if(pid == 0) {
-		char env[10];
-		const char *argv[32];
-		int a = 0;
-
-		if (quiet) {
-			int fd = open("/dev/null", O_RDONLY);
-			if (fd != -1) {
-				dup2(fd, 1);
-				dup2(fd, 2);
-			}
-		}
-
-		argv[a++] = FUSERMOUNT_PROG;
-		argv[a++] = "--auto-unmount";
-		argv[a++] = "--";
-		argv[a++] = mountpoint;
-		argv[a++] = NULL;
-
-		close(fds[1]);
-		fcntl(fds[0], F_SETFD, 0);
-		snprintf(env, sizeof(env), "%i", fds[0]);
-		setenv(FUSE_COMMFD_ENV, env, 1);
-		exec_fusermount(argv);
-		perror("fuse: failed to exec fusermount3");
-		_exit(1);
-	}
-
+	// passed to child now, so can close here.
 	close(fds[0]);
 
 	// Now fusermount3 will only exit when fds[1] closes automatically when our
 	// process exits.
 	return 0;
+	// Note: fds[1] is leakend and doesn't get FD_CLOEXEC
 }
 
 static int fuse_mount_fusermount(const char *mountpoint, struct mount_opts *mo,
 		const char *opts, int quiet)
 {
-	int fds[2], pid;
+	int fds[2];
+	pid_t pid;
 	int res;
-	int rv;
 
 	if (!mountpoint) {
 		fuse_log(FUSE_LOG_ERR, "fuse: missing mountpoint parameter\n");
@@ -394,51 +434,46 @@ static int fuse_mount_fusermount(const char *mountpoint, struct mount_opts *mo,
 
 	res = socketpair(PF_UNIX, SOCK_STREAM, 0, fds);
 	if(res == -1) {
-		perror("fuse: socketpair() failed");
+		fuse_log(FUSE_LOG_ERR, "Running %s: socketpair() failed: %s\n",
+			 FUSERMOUNT_PROG, strerror(errno));
 		return -1;
 	}
 
-	pid = fork();
-	if(pid == -1) {
-		perror("fuse: fork() failed");
+	char arg_fd_entry[30];
+	snprintf(arg_fd_entry, sizeof(arg_fd_entry), "%i", fds[0]);
+	setenv(FUSE_COMMFD_ENV, arg_fd_entry, 1);
+	/*
+	 * This helps to identify the FD hold by parent process.
+	 * In auto-unmount case, parent process can close this FD explicitly to do unmount.
+	 * The FD[1] can be got via getenv(FUSE_COMMFD2_ENV).
+	 * One potential use case is to satisfy FD-Leak checks.
+	 */
+	snprintf(arg_fd_entry, sizeof(arg_fd_entry), "%i", fds[1]);
+	setenv(FUSE_COMMFD2_ENV, arg_fd_entry, 1);
+
+	char const *const argv[] = {
+		FUSERMOUNT_PROG,
+		"-o", opts ? opts : "",
+		"--",
+		mountpoint,
+		NULL,
+	};
+
+
+	int status = fusermount_fork_exec(argv, quiet, fds[1], &pid);
+
+	if(status != 0) {
 		close(fds[0]);
 		close(fds[1]);
+		fuse_log(FUSE_LOG_ERR, "fork() for %s failed: %s",
+			 FUSERMOUNT_PROG, strerror(-status));
 		return -1;
 	}
 
-	if(pid == 0) {
-		char env[10];
-		const char *argv[32];
-		int a = 0;
-
-		if (quiet) {
-			int fd = open("/dev/null", O_RDONLY);
-			if (fd != -1) {
-				dup2(fd, 1);
-				dup2(fd, 2);
-			}
-		}
-
-		argv[a++] = FUSERMOUNT_PROG;
-		if (opts) {
-			argv[a++] = "-o";
-			argv[a++] = opts;
-		}
-		argv[a++] = "--";
-		argv[a++] = mountpoint;
-		argv[a++] = NULL;
-
-		close(fds[1]);
-		fcntl(fds[0], F_SETFD, 0);
-		snprintf(env, sizeof(env), "%i", fds[0]);
-		setenv(FUSE_COMMFD_ENV, env, 1);
-		exec_fusermount(argv);
-		perror("fuse: failed to exec fusermount3");
-		_exit(1);
-	}
-
+	// passed to child now, so can close here.
 	close(fds[0]);
-	rv = receive_fd(fds[1]);
+
+	int fd = receive_fd(fds[1]);
 
 	if (!mo->auto_unmount) {
 		/* with auto_unmount option fusermount3 will not exit until
@@ -447,10 +482,10 @@ static int fuse_mount_fusermount(const char *mountpoint, struct mount_opts *mo,
 		waitpid(pid, NULL, 0); /* bury zombie */
 	}
 
-	if (rv >= 0)
-		fcntl(rv, F_SETFD, FD_CLOEXEC);
+	if (fd >= 0)
+		fcntl(fd, F_SETFD, FD_CLOEXEC);
 
-	return rv;
+	return fd;
 }
 
 #ifndef O_CLOEXEC
@@ -461,7 +496,7 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 			  const char *mnt_opts)
 {
 	char tmp[128];
-	const char *devname = "/dev/fuse";
+	const char *devname = getenv(FUSE_KERN_DEVICE_ENV) ?: "/dev/fuse";
 	char *source = NULL;
 	char *type = NULL;
 	struct stat stbuf;
@@ -483,7 +518,9 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 	fd = open(devname, O_RDWR | O_CLOEXEC);
 	if (fd == -1) {
 		if (errno == ENODEV || errno == ENOENT)
-			fuse_log(FUSE_LOG_ERR, "fuse: device not found, try 'modprobe fuse' first\n");
+			fuse_log(FUSE_LOG_ERR,
+				"fuse: device %s not found. Kernel module not loaded?\n",
+				devname);
 		else
 			fuse_log(FUSE_LOG_ERR, "fuse: failed to open %s: %s\n",
 				devname, strerror(errno));
@@ -571,7 +608,7 @@ static int fuse_mount_sys(const char *mnt, struct mount_opts *mo,
 	return fd;
 
 out_umount:
-	umount2(mnt, 2); /* lazy umount */
+	umount2(mnt, MNT_DETACH | UMOUNT_NOFOLLOW); /* lazy umount */
 out_close:
 	free(type);
 	free(source);
@@ -645,7 +682,8 @@ int fuse_kern_mount(const char *mountpoint, struct mount_opts *mo)
 	if (res >= 0 && mo->auto_unmount) {
 		if(0 > setup_auto_unmount(mountpoint, 0)) {
 			// Something went wrong, let's umount like in fuse_mount_sys.
-			umount2(mountpoint, MNT_DETACH); /* lazy umount */
+			umount2(mountpoint,
+				MNT_DETACH | UMOUNT_NOFOLLOW); /* lazy umount */
 			res = -1;
 		}
 	} else if (res == -2) {

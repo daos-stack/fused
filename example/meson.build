@@ -4,7 +4,11 @@ examples = [ 'passthrough', 'passthrough_fh',
              'ioctl', 'cuse', 'cuse_client' ]
 
 if not platform.endswith('bsd') and platform != 'dragonfly'
-    examples += [ 'passthrough_ll', 'hello_ll_uds' ]
+    examples += [ 'passthrough_ll' ]
+
+    if private_cfg.get('HAVE_CUSTOM_IO', false)
+        examples += [ 'hello_ll_uds' ]
+    endif
 
     # According to Conrad Meyer <cem@freebsd.org>, FreeBSD doesn't
     # support mounting files, This is enforced in vfs_domount_first()
@@ -31,13 +35,13 @@ foreach ex : threaded_examples
                install: false)
 endforeach
 
-if not platform.endswith('bsd') and platform != 'dragonfly' and add_languages('cpp', required : false)
+if platform != 'dragonfly' and add_languages('cpp', required : false)
     executable('passthrough_hp', 'passthrough_hp.cc',
                dependencies: [ thread_dep, libfuse_dep ],
                install: false)
     executable('memfs_ll', 'memfs_ll.cc',
                dependencies: [ thread_dep, libfuse_dep ],
-               cpp_args : '-std=c++17',
+               cpp_args : '-std=c++20',
                install: false)
 endif
 

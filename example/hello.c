@@ -3,7 +3,7 @@
   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
 
   This program can be distributed under the terms of the GNU GPLv2.
-  See the file COPYING.
+  See the file GPL2.txt.
 */
 
 /** @file
@@ -12,7 +12,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall hello.c `pkg-config fused --cflags --libs` -o hello
+ *     gcc -Wall hello.c `pkg-config fuse3 --cflags --libs` -o hello
  *
  * ## Source code ##
  * \include hello.c

@@ -19,6 +19,14 @@ if private_cfg.get('HAVE_ICONV')
    endif
 endif
 
+if private_cfg.get('HAVE_URING', false)
+  libfuse_sources += [ 'fuse_uring.c' ]
+  deps += [ dependency('liburing') ]
+  deps += [ dependency('numa') ]
+endif
+
+
+
 libdl = cc.find_library('dl', required: false)
 if libdl.found()
    deps += [ libdl ]
@@ -35,10 +43,11 @@ endif
 fusermount_path = join_paths(get_option('prefix'), get_option('bindir'))
 libfuse = library('fused',
                   libfuse_sources,
-                  version: meson.project_version(),
+                  version: base_version,
                   soversion: '1',
                   include_directories: include_dirs,
-                  dependencies: deps, install: true,
+                  dependencies: deps,
+                  install: true,
                   link_depends: 'fuse_versionscript',
                   c_args: [ '-DFUSE_USE_VERSION=317',
                             '-DFUSERMOUNT_DIR="@0@"'.format(fusermount_path) ],
