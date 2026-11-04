@@ -3,7 +3,7 @@
   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
 
   This program can be distributed under the terms of the GNU GPLv2.
-  See the file COPYING.
+  See the file GPL2.txt.
 */
 /* This program does the mounting and unmounting of FUSE filesystems */
 
@@ -36,11 +36,18 @@
 #include <stdbool.h>
 #include <sys/vfs.h>
 
-#ifdef HAVE_CLOSE_RANGE
+#if defined HAVE_CLOSE_RANGE && defined linux
 #include <linux/close_range.h>
 #endif
 
+#if defined HAVE_LISTMOUNT
+#include <linux/mount.h>
+#include <syscall.h>
+#include <stdint.h>
+#endif
+
 #define FUSE_COMMFD_ENV		"_FUSE_COMMFD"
+#define FUSE_KERN_DEVICE_ENV	"FUSE_KERN_DEVICE"
 
 #define FUSE_DEV "/dev/fuse"
 
@@ -565,7 +572,7 @@ static int unmount_fuse(const char *mnt, int quiet, int lazy)
 	return res;
 }
 
-static int count_fuse_fs(void)
+static int count_fuse_fs_mtab(void)
 {
 	struct mntent *entp;
 	int count = 0;
@@ -585,6 +592,72 @@ static int count_fuse_fs(void)
 	return count;
 }
 
+#ifdef HAVE_LISTMOUNT
+static int count_fuse_fs_ls_mnt(void)
+{
+	#define SMBUF_SIZE 1024
+	#define MNT_ID_LEN 128
+
+	int fuse_count = 0;
+	int n_mounts = 0;
+	int ret = 0;
+	uint64_t mnt_ids[MNT_ID_LEN];
+	unsigned char smbuf[SMBUF_SIZE];
+	struct mnt_id_req req = {
+		.size = sizeof(struct mnt_id_req),
+	};
+	struct statmount *sm;
+
+	for (;;) {
+		req.mnt_id = LSMT_ROOT;
+
+		n_mounts = syscall(SYS_listmount, &req, &mnt_ids, MNT_ID_LEN, 0);
+		if (n_mounts == -1) {
+			if (errno != ENOSYS) {
+				fprintf(stderr, "%s: failed to list mounts: %s\n", progname,
+					strerror(errno));
+			}
+			return -1;
+		}
+
+		for (int i = 0; i < n_mounts; i++) {
+			req.mnt_id = mnt_ids[i];
+			req.param = STATMOUNT_FS_TYPE;
+			ret = syscall(SYS_statmount, &req, &smbuf, SMBUF_SIZE, 0);
+			if (ret) {
+				if (errno == ENOENT)
+					continue;
+
+				fprintf(stderr, "%s: failed to stat mount %lld: %s\n", progname,
+					req.mnt_id, strerror(errno));
+				return -1;
+			}
+
+			sm = (struct statmount *)smbuf;
+			if (sm->mask & STATMOUNT_FS_TYPE &&
+			    strcmp(&sm->str[sm->fs_type], "fuse") == 0)
+				fuse_count++;
+		}
+
+		if (n_mounts < MNT_ID_LEN)
+			break;
+		req.param = mnt_ids[MNT_ID_LEN - 1];
+	}
+	return fuse_count;
+}
+
+static int count_fuse_fs(void)
+{
+	int count = count_fuse_fs_ls_mnt();
+
+	return count >= 0 ? count : count_fuse_fs_mtab();
+}
+#else
+static int count_fuse_fs(void)
+{
+	return count_fuse_fs_mtab();
+}
+#endif
 
 #else /* IGNORE_MTAB */
 static int count_fuse_fs(void)
@@ -612,11 +685,19 @@ static int unmount_fuse(const char *mnt, int quiet, int lazy)
 static void strip_line(char *line)
 {
 	char *s = strchr(line, '#');
+	size_t len;
+
 	if (s != NULL)
 		s[0] = '\0';
-	for (s = line + strlen(line) - 1;
-	     s >= line && isspace((unsigned char) *s); s--);
-	s[1] = '\0';
+	/*
+	 * Count down rather than walk a pointer back: an empty or all-blank
+	 * line would form line - 1, which is undefined behaviour even though
+	 * the store that follows lands inside the buffer.
+	 */
+	len = strlen(line);
+	while (len > 0 && isspace((unsigned char) line[len - 1]))
+		len--;
+	line[len] = '\0';
 	for (s = line; isspace((unsigned char) *s); s++);
 	if (s != line)
 		memmove(line, s, strlen(s)+1);
@@ -627,8 +708,14 @@ static void parse_line(char *line, int linenum)
 	int tmp;
 	if (strcmp(line, "user_allow_other") == 0)
 		user_allow_other = 1;
-	else if (sscanf(line, "mount_max = %i", &tmp) == 1)
-		mount_max = tmp;
+	else if (sscanf(line, "mount_max = %i", &tmp) == 1) {
+		if (tmp < -1)
+			fprintf(stderr,
+				"%s: invalid mount_max = %i in %s at line %i\n",
+				progname, tmp, FUSE_CONF, linenum);
+		else
+			mount_max = tmp;
+	}
 	else if(line[0])
 		fprintf(stderr,
 			"%s: unknown parameter in %s at line %i: '%s'\n",
@@ -779,7 +866,7 @@ static int get_mnt_opts(int flags, char *opts, char **mnt_optsp)
 		return -1;
 	/* remove comma from end of opts*/
 	l = strlen(*mnt_optsp);
-	if ((*mnt_optsp)[l-1] == ',')
+	if (l > 0 && (*mnt_optsp)[l-1] == ',')
 		(*mnt_optsp)[l-1] = '\0';
 	if (getuid() != 0) {
 		const char *user = get_user_name();
@@ -1018,83 +1105,111 @@ err:
 	return -1;
 }
 
-static int check_perm(const char **mntp, struct stat *stbuf, int *mountpoint_fd)
+/*
+ * Resolve the caller-supplied mountpoint exactly once and hand back a
+ * descriptor for the inode it named. O_NOFOLLOW refuses a symlink outright for
+ * an unprivileged caller; root keeps following them, as it always has.
+ */
+static int pin_mountpoint(const char *mnt, bool is_root, struct stat *stbuf)
 {
-	int res;
-	const char *mnt = *mntp;
-	const char *origmnt = mnt;
-	struct statfs fs_buf;
-	size_t i;
+	int open_flags = O_PATH | O_CLOEXEC;
+	int fd;
 
-	res = lstat(mnt, stbuf);
-	if (res == -1) {
+	if (!is_root)
+		open_flags |= O_NOFOLLOW;
+
+	fd = open(mnt, open_flags);
+	if (fd == -1) {
 		fprintf(stderr, "%s: failed to access mountpoint %s: %s\n",
 			progname, mnt, strerror(errno));
 		return -1;
 	}
 
+	if (fstat(fd, stbuf) == -1) {
+		fprintf(stderr, "%s: failed to access mountpoint %s: %s\n",
+			progname, mnt, strerror(errno));
+		close(fd);
+		return -1;
+	}
+
+	return fd;
+}
+
+static int check_perm(const char **mntp, struct stat *stbuf, int *mountpoint_fd)
+{
+	int res;
+	int fd;
+	const char *mnt = *mntp;
+	const bool is_root = getuid() == 0;
+	struct statfs fs_buf;
+	size_t i;
+
+	fd = pin_mountpoint(mnt, is_root, stbuf);
+	if (fd == -1)
+		return -1;
+
 	/* No permission checking is done for root */
-	if (getuid() == 0)
+	if (is_root) {
+		*mountpoint_fd = fd;
 		return 0;
+	}
 
 	if (S_ISDIR(stbuf->st_mode)) {
-		res = chdir(mnt);
+		res = fchdir(fd);
 		if (res == -1) {
 			fprintf(stderr,
 				"%s: failed to chdir to mountpoint: %s\n",
 				progname, strerror(errno));
-			return -1;
+			goto out_close;
 		}
-		mnt = *mntp = ".";
-		res = lstat(mnt, stbuf);
-		if (res == -1) {
-			fprintf(stderr,
-				"%s: failed to access mountpoint %s: %s\n",
-				progname, origmnt, strerror(errno));
-			return -1;
-		}
+		/*
+		 * The pinned directory is the CWD, so "." names it without
+		 * going through the caller-supplied path a second time.
+		 */
+		*mntp = ".";
 
 		if ((stbuf->st_mode & S_ISVTX) && stbuf->st_uid != getuid()) {
 			fprintf(stderr, "%s: mountpoint %s not owned by user\n",
-				progname, origmnt);
-			return -1;
+				progname, mnt);
+			res = -1;
+			goto out_close;
 		}
 
-		res = access(mnt, W_OK);
+		res = access(*mntp, W_OK);
 		if (res == -1) {
 			fprintf(stderr, "%s: user has no write access to mountpoint %s\n",
-				progname, origmnt);
-			return -1;
+				progname, mnt);
+			goto out_close;
 		}
 	} else if (S_ISREG(stbuf->st_mode)) {
 		static char procfile[256];
-		*mountpoint_fd = open(mnt, O_WRONLY);
-		if (*mountpoint_fd == -1) {
+		int wfd;
+
+		snprintf(procfile, sizeof(procfile), "/proc/self/fd/%i", fd);
+
+		/*
+		 * Reopening the pinned inode through its magic link both tests
+		 * write access and yields the descriptor mount(2) is pointed
+		 * at, so the caller's path is never resolved again.
+		 */
+		wfd = open(procfile, O_WRONLY);
+		if (wfd == -1) {
 			fprintf(stderr, "%s: failed to open %s: %s\n",
 				progname, mnt, strerror(errno));
-			return -1;
+			res = -1;
+			goto out_close;
 		}
-		res = fstat(*mountpoint_fd, stbuf);
-		if (res == -1) {
-			fprintf(stderr,
-				"%s: failed to access mountpoint %s: %s\n",
-				progname, mnt, strerror(errno));
-			return -1;
-		}
-		if (!S_ISREG(stbuf->st_mode)) {
-			fprintf(stderr,
-				"%s: mountpoint %s is no longer a regular file\n",
-				progname, mnt);
-			return -1;
-		}
+		close(fd);
+		fd = wfd;
 
-		sprintf(procfile, "/proc/self/fd/%i", *mountpoint_fd);
+		snprintf(procfile, sizeof(procfile), "/proc/self/fd/%i", fd);
 		*mntp = procfile;
 	} else {
 		fprintf(stderr,
 			"%s: mountpoint %s is not a directory or a regular file\n",
 			progname, mnt);
-		return -1;
+		res = -1;
+		goto out_close;
 	}
 
 	/* Do not permit mounting over anything in procfs - it has a couple
@@ -1106,7 +1221,8 @@ static int check_perm(const char **mntp, struct stat *stbuf, int *mountpoint_fd)
 	if (statfs(*mntp, &fs_buf)) {
 		fprintf(stderr, "%s: failed to access mountpoint %s: %s\n",
 			progname, mnt, strerror(errno));
-		return -1;
+		res = -1;
+		goto out_close;
 	}
 
 	/* Define permitted filesystems for the mount target. This was
@@ -1146,6 +1262,7 @@ static int check_perm(const char **mntp, struct stat *stbuf, int *mountpoint_fd)
 		0x73717368 /* SQUASHFS_MAGIC */,
 		0x01021994 /* TMPFS_MAGIC */,
 		0x24051905 /* UBIFS_SUPER_MAGIC */,
+		0x18031977 /* WEKAFS_SUPER_MAGIC */,
 #if __SIZEOF_LONG__ > 4
 		0x736675005346544e /* UFSD */,
 #endif
@@ -1154,65 +1271,45 @@ static int check_perm(const char **mntp, struct stat *stbuf, int *mountpoint_fd)
 		0x858458f6 /* RAMFS_MAGIC */,
 	};
 	for (i = 0; i < sizeof(f_type_whitelist)/sizeof(f_type_whitelist[0]); i++) {
-		if (f_type_whitelist[i] == fs_buf.f_type)
+		if (f_type_whitelist[i] == fs_buf.f_type) {
+			*mountpoint_fd = fd;
 			return 0;
+		}
 	}
 
 	fprintf(stderr, "%s: mounting over filesystem type %#010lx is forbidden\n",
 		progname, (unsigned long)fs_buf.f_type);
-	return -1;
+	res = -1;
+
+out_close:
+	close(fd);
+	return res;
 }
 
-static int try_open(const char *dev, char **devp, int silent)
-{
-	int fd = open(dev, O_RDWR);
-	if (fd != -1) {
-		*devp = strdup(dev);
-		if (*devp == NULL) {
-			fprintf(stderr, "%s: failed to allocate memory\n",
-				progname);
-			close(fd);
-			fd = -1;
-		}
-	} else if (errno == ENODEV ||
-		   errno == ENOENT)/* check for ENOENT too, for the udev case */
-		return -2;
-	else if (!silent) {
-		fprintf(stderr, "%s: failed to open %s: %s\n", progname, dev,
-			strerror(errno));
-	}
-	return fd;
-}
-
-static int try_open_fuse_device(char **devp)
+static int open_fuse_device(const char *dev)
 {
 	int fd;
 
 	drop_privs();
-	fd = try_open(FUSE_DEV, devp, 0);
+	fd = open(dev, O_RDWR);
+	if (fd == -1) {
+		if (errno == ENODEV || errno == ENOENT)/* check for ENOENT too, for the udev case */
+			fprintf(stderr,
+				"%s: fuse device %s not found. Kernel module not loaded?\n",
+				progname, dev);
+		else
+			fprintf(stderr,
+				"%s: failed to open %s: %s\n", progname, dev, strerror(errno));
+	}
 	restore_privs();
 	return fd;
 }
-
-static int open_fuse_device(char **devp)
-{
-	int fd = try_open_fuse_device(devp);
-	if (fd >= -1)
-		return fd;
-
-	fprintf(stderr,
-		"%s: fuse device not found, try 'modprobe fuse' first\n",
-		progname);
-
-	return -1;
-}
-
 
 static int mount_fuse(const char *mnt, const char *opts, const char **type)
 {
 	int res;
 	int fd;
-	char *dev;
+	const char *dev = getenv(FUSE_KERN_DEVICE_ENV) ?: FUSE_DEV;
 	struct stat stbuf;
 	char *source = NULL;
 	char *mnt_opts = NULL;
@@ -1221,7 +1318,7 @@ static int mount_fuse(const char *mnt, const char *opts, const char **type)
 	char *do_mount_opts = NULL;
 	char *x_opts = NULL;
 
-	fd = open_fuse_device(&dev);
+	fd = open_fuse_device(dev);
 	if (fd == -1)
 		return -1;
 
@@ -1292,7 +1389,6 @@ static int mount_fuse(const char *mnt, const char *opts, const char **type)
 out_free:
 	free(source);
 	free(mnt_opts);
-	free(dev);
 	free(x_opts);
 	free(do_mount_opts);
 
@@ -1342,11 +1438,9 @@ static int send_fd(int sock_fd, int fd)
 
 /* Helper for should_auto_unmount
  *
- * fusermount typically has the s-bit set - initial open of `mnt` was as root
- * and got EACCESS as 'allow_other' was not specified.
- * Try opening `mnt` again with uid and guid of the calling process.
+ * Try opening `mnt` with uid and gid of the calling process.
  */
-static int recheck_ENOTCONN_as_owner(const char *mnt)
+static int check_ENOTCONN_as_owner(const char *mnt)
 {
 	int pid = fork();
 	if(pid == -1) {
@@ -1365,7 +1459,7 @@ static int recheck_ENOTCONN_as_owner(const char *mnt)
 		}
 
 		int fd = open(mnt, O_RDONLY);
-		if(fd == -1 && errno == ENOTCONN)
+		if (fd == -1 && (errno == ENOTCONN || errno == ECONNABORTED))
 			_exit(EXIT_SUCCESS);
 		else
 			_exit(EXIT_FAILURE);
@@ -1401,7 +1495,6 @@ static int should_auto_unmount(const char *mnt, const char *type)
 	char *copy;
 	const char *last;
 	int result = 0;
-	int fd;
 
 	copy = strdup(mnt);
 	if (copy == NULL) {
@@ -1414,23 +1507,7 @@ static int should_auto_unmount(const char *mnt, const char *type)
 	if (check_is_mount(last, mnt, type) == -1)
 		goto out;
 
-	fd = open(mnt, O_RDONLY);
-
-	if (fd != -1) {
-		close(fd);
-	} else {
-		switch(errno) {
-		case ENOTCONN:
-			result = 1;
-			break;
-		case EACCES:
-			result = recheck_ENOTCONN_as_owner(mnt);
-			break;
-		default:
-			result = 0;
-			break;
-		}
-	}
+	result = check_ENOTCONN_as_owner(mnt);
 out:
 	free(copy);
 	return result;
@@ -1534,14 +1611,15 @@ int main(int argc, char *argv[])
 
 	static const struct option long_opts[] = {
 		{"unmount", no_argument, NULL, 'u'},
-		// Note: auto-unmount deliberately does not have a short version.
-		// It's meant for internal use by mount.c's setup_auto_unmount.
-		{"auto-unmount", no_argument, NULL, 'U'},
 		{"lazy",    no_argument, NULL, 'z'},
 		{"quiet",   no_argument, NULL, 'q'},
 		{"help",    no_argument, NULL, 'h'},
 		{"version", no_argument, NULL, 'V'},
 		{"options", required_argument, NULL, 'o'},
+		// Note: auto-unmount and comm-fd don't have short versions.
+		// They'ne meant for internal use by mount.c
+		{"auto-unmount", no_argument, NULL, 'U'},
+		{"comm-fd", required_argument, NULL, 'c'},
 		{0, 0, 0, 0}};
 
 	progname = strdup(argc > 0 ? argv[0] : "fusermount");
@@ -1572,6 +1650,9 @@ int main(int argc, char *argv[])
 			unmount = 1;
 			auto_unmount = 1;
 			setup_auto_unmount_only = 1;
+			break;
+		case 'c':
+			commfd = optarg;
 			break;
 		case 'z':
 			lazy = 1;
@@ -1619,7 +1700,8 @@ int main(int argc, char *argv[])
 	if (!setup_auto_unmount_only && unmount)
 		goto do_unmount;
 
-	commfd = getenv(FUSE_COMMFD_ENV);
+	if(commfd == NULL)
+		commfd = getenv(FUSE_COMMFD_ENV);
 	if (commfd == NULL) {
 		fprintf(stderr, "%s: old style mounting not supported\n",
 			progname);
@@ -1637,7 +1719,12 @@ int main(int argc, char *argv[])
 
 	{
 		struct stat statbuf;
-		fstat(cfd, &statbuf);
+		if (fstat(cfd, &statbuf) == -1) {
+			fprintf(stderr,
+				"%s: fstat of comm fd %li failed: %s\n",
+				progname, cfd, strerror(errno));
+			goto err_out;
+		}
 		if(!S_ISSOCK(statbuf.st_mode)) {
 			fprintf(stderr,
 				"%s: file descriptor %li is not a socket, can't send fuse fd\n",
@@ -1655,7 +1742,7 @@ int main(int argc, char *argv[])
 
 	res = send_fd(cfd, fd);
 	if (res != 0) {
-		umount2(mnt, MNT_DETACH); /* lazy umount */
+		unmount_fuse(mnt, 1, 1); /* lazy umount */
 		goto err_out;
 	}
 	close(fd);
@@ -1710,7 +1797,7 @@ do_unmount:
 	if (geteuid() == 0)
 		res = unmount_fuse(mnt, quiet, lazy);
 	else {
-		res = umount2(mnt, lazy ? UMOUNT_DETACH : 0);
+		res = umount2(mnt, (lazy ? UMOUNT_DETACH : 0) | UMOUNT_NOFOLLOW);
 		if (res == -1 && !quiet)
 			fprintf(stderr,
 				"%s: failed to unmount %s: %s\n",

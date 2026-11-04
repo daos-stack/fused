@@ -4,7 +4,7 @@
             (C) 2017 EditShare LLC <slawek.rudnicki@editshare.com>
 
   This program can be distributed under the terms of the GNU GPLv2.
-  See the file COPYING.
+  See the file GPL2.txt.
  */
 
 /** @file
@@ -19,7 +19,7 @@
  *
  * ## Compilation ##
  *
- *     gcc -Wall invalidate_path.c `pkg-config fused --cflags --libs` -o invalidate_path
+ *     gcc -Wall invalidate_path.c `pkg-config fuse3 --cflags --libs` -o invalidate_path
  *
  * ## Source code ##
  * \include invalidate_path.c
@@ -163,10 +163,11 @@ static const struct fuse_operations xmp_oper = {
 
 static void update_fs(void) {
 	static int count = 0;
+	struct tm tmbuf;
 	struct tm *now;
 	time_t t;
 	t = time(NULL);
-	now = localtime(&t);
+	now = localtime_r(&t, &tmbuf);
 	assert(now != NULL);
 
 	int time_file_size = strftime(time_file_contents, MAX_STR_LEN,

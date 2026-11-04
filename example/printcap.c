@@ -3,7 +3,7 @@
   Copyright (C) 2017 Nikolaus Rath <Nikolaus@rath.org>
 
   This program can be distributed under the terms of the GNU GPLv2.
-  See the file COPYING.
+  See the file GPL2.txt.
 */
 
 /** @file
@@ -13,7 +13,7 @@
  *
  * Compile with:
  *
- *     gcc -Wall printcap.c `pkg-config fused --cflags --libs` -o printcap
+ *     gcc -Wall printcap.c `pkg-config fuse3 --cflags --libs` -o printcap
  *
  * ## Source code ##
  * \include printcap.c
