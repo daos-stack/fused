@@ -1,5 +1,5 @@
 project('libfused', ['c'],
-        version: '1.2.0', # synced with fuse-3.18.3
+        version: '1.2.1', # fuse-3.18.3 + FUSE_CAP_ALLOW_IDMAP
         meson_version: '>= 0.60.0',
         default_options: [
             'buildtype=debugoptimized',
